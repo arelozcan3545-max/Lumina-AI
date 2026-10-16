@@ -1,0 +1,75 @@
+{
+  "profiles": {
+    "guest_test123456": {
+      "uid": "guest_test123456",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1792142200,
+      "daily_usage": {
+        "date": "2026-10-16",
+        "messages": 1,
+        "images": 0
+      },
+      "family_members": []
+    },
+    "guest_user": {
+      "uid": "guest_user",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1792143264,
+      "daily_usage": {
+        "date": "2026-10-16",
+        "messages": 3,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
+    },
+    "guest_bc5c80f7-6675-4a60-b375-4c12f11d98e3": {
+      "uid": "guest_bc5c80f7-6675-4a60-b375-4c12f11d98e3",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "ekonomi",
+      "subscription_status": "preview",
+      "created_at": 1792144008,
+      "daily_usage": {
+        "date": "2026-10-16",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": [
+        {
+          "type": "plan_selected",
+          "payload": {
+            "plan": "ekonomi"
+          },
+          "timestamp": 1792144051
+        }
+      ],
+      "subscription_price": 150,
+      "subscription_updated_at": 1792144051
+    }
+  },
+  "guest_bc5c80f7-6675-4a60-b375-4c12f11d98e3": [
+    {
+      "user": "Merhaba",
+      "bot": "Merhaba! 🌟 Seni görmek ne güzel. Bugün nasıl hissediyorsun? Her şey yolunda mı, yoksa bir konuda destek ister misin? Ne söyle, seninle birlikte konuşmaktan mutluluk duyarım.",
+      "timestamp": 1792144052
+    },
+    {
+      "user": "naber",
+      "bot": "Merhaba! 😊 Ben her zaman burada, seninle sohbet etmeye hazırım. Neler var bugün, ne düşünüyorsun? Biraz keyifli bir şey mi bekliyorsun, yoksa gündelik bir konuda mı konuşmak istersin? Her şey yolunda mı, yoksa bir şeye ihtiyacın var mı? Ben buradayım, dinlemeye hazırım!",
+      "timestamp": 1792144078
+    },
+    {
+      "user": "Merhaba, kota testi",
+      "bot": "Merhaba! 🚀 Kota testiyle ilgili ne yapmamı istersin? Limitleri görmek, yanıt sürelerini ölçmek ya da başka bir şey mi düşünüyorsun? Bana biraz daha ayrıntı verirsen, hemen yardımcı olabilirim!",
+      "timestamp": 1792144440
+    }
+  ]
+}
