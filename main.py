@@ -59,6 +59,7 @@ from models_provider import (
     call_github_models,
     call_gemini_image,
     list_configured_providers,
+    list_provider_status,
     GEMINI_API_KEY,
     GROQ_API_KEY,
     GITHUB_TOKEN,
@@ -72,9 +73,19 @@ from models_provider import (
 )
 from smart_ui import (
     SMART_UI_SYSTEM_INSTRUCTION,
+    SUPPORTED_UI_TYPES,
     extract_smart_ui_blocks,
     strip_smart_ui_blocks,
-    sanitize_smart_ui_payload
+    sanitize_smart_ui_payload,
+    validate_smart_ui_payload,
+    get_smart_ui_catalog,
+)
+from file_processing import (
+    analyze_file,
+    supported_formats,
+    FileAnalysisError,
+    MAX_UPLOAD_BYTES,
+    MAX_TEXT_CHARS,
 )
 from storage import get_store
 
@@ -92,6 +103,16 @@ try:
     HAS_FIREBASE_MODULE = True
 except ImportError:
     HAS_FIREBASE_MODULE = False
+
+# Firebase ID token doğrulaması için servis hesabı gerektirmeyen yol.
+# google-auth, Google'ın genel anahtarlarıyla imzayı doğrular; Firestore/Admin
+# yetkisi vermez, yalnızca kimlik doğrulama içindir.
+try:
+    from google.auth.transport import requests as google_auth_requests
+    from google.oauth2 import id_token as google_id_token
+    HAS_GOOGLE_AUTH = True
+except ImportError:
+    HAS_GOOGLE_AUTH = False
 
 # ============================================================
 # ENVIRONMENT & LOGGING
@@ -146,6 +167,17 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Temel güvenlik başlıkları (XSS/MIME sniffing/clickjacking savunması)."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(self)")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    return response
 
 # ============================================================
 # FIREBASE & DAYANIKLI DEPOSU (lumina-ai-a42e0)
@@ -617,18 +649,53 @@ def enforce_rate_limit(uid: str):
 
 GUEST_USER_INFO = {"uid": "guest_user", "name": "Misafir Kullanıcı", "email": "misafir@lumina.ai"}
 
-async def verify_token(authorization: Optional[str] = Header(default=None)):
-    """Firebase idToken veya yapılandırılmış misafir kimliğini doğrular.
 
-    ✅ ONARIM: Firebase aktifken geçersiz token artık sessizce "misafir" yapılmıyor;
-    401 ile reddediliyor. (Yetkisiz işlemler nedeniyle sessiz izin kötüye kullanımını önler.)
+def _verify_firebase_token_without_admin(token: str) -> Optional[dict]:
+    """Servis hesabı olmadan Firebase ID token doğrular (yalnızca kimlik).
+
+    google-auth, Google'ın genel anahtarlarıyla imzayı ve `aud`/`iss`
+    alanlarını doğrular. Firestore/Admin yetkisi vermez; bu nedenle yalnızca
+    kimlik doğrulama için kullanılır. Ağ hatası veya geçersiz token `None`
+    döndürür; çağıran taraf misafir/yerel yola devam eder.
+    """
+    if not HAS_GOOGLE_AUTH or token.count(".") != 2:
+        return None
+    try:
+        claims = google_id_token.verify_firebase_token(
+            token,
+            google_auth_requests.Request(),
+            audience=FIREBASE_PROJECT_ID,
+        )
+    except Exception as exc:
+        logger.warning(f"Firebase ID token (google-auth) doğrulanamadı: {exc}")
+        return None
+    uid = claims.get("sub") or claims.get("user_id")
+    if not uid:
+        return None
+    return {
+        "uid": uid,
+        "name": claims.get("name") or claims.get("email") or "Firebase Kullanıcısı",
+        "email": claims.get("email", ""),
+        "firebase": claims,
+    }
+
+
+async def verify_token(authorization: Optional[str] = Header(default=None)):
+    """Firebase idToken veya açıkça izin verilmiş yerel/misafir kimliğini doğrular.
+
+    Firebase Admin aktifken geçersiz token 401 ile reddedilir. Servis hesabı
+    yoksa geçerli Firebase ID token'ları google-auth genel anahtarlarıyla
+    doğrulanır. Geri kalan durumda yalnızca `guest_*` / `guest` / `local`
+    biçimleri kabul edilir; keyfî bir metin kullanıcı kimliği sayılmaz.
     """
     if not authorization:
         return dict(GUEST_USER_INFO)
 
     token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Yetkilendirme başlığı boş.")
 
-    if token in ("guest", "guest_token", "local"):
+    if token in ("guest", "guest_token"):
         return dict(GUEST_USER_INFO)
 
     if token.startswith("guest_") and re.fullmatch(r"guest_[A-Za-z0-9\-_]{6,64}", token):
@@ -645,7 +712,20 @@ async def verify_token(authorization: Optional[str] = Header(default=None)):
                 detail="Oturum kimlik doğrulaması başarısız oldu. Lütfen tekrar giriş yapıp tekrar deneyin."
             )
 
-    return {"uid": "local_user", "name": "Yerel Kullanıcı", "email": "user@lumina.ai"}
+    # Servis hesabı yoksa bile Firebase ID token'ını genel anahtarlarla doğrula.
+    if not FIREBASE_ENABLED:
+        firebase_user = _verify_firebase_token_without_admin(token)
+        if firebase_user:
+            return firebase_user
+
+    # Firebase yok: yalnızca açıkça etkinleştirilmiş yerel mod kabul edilir.
+    if token == "local" and os.getenv("LUMINA_ALLOW_LOCAL_AUTH", "1").strip() != "0":
+        return {"uid": "local_user", "name": "Yerel Kullanıcı", "email": "user@lumina.ai"}
+
+    raise HTTPException(
+        status_code=401,
+        detail="Geçersiz kimlik bilgisi. Firebase yapılandırılmadığında yalnızca misafir oturumu kullanılabilir."
+    )
 
 # ============================================================
 # HAFIZA & GEÇMİŞ YÖNETİMİ
@@ -791,72 +871,12 @@ PERSONALITY_PROMPTS = {
 }
 
 # ============================================================
-# BELGE METİN ÇIKARICILARI (TXT / MD / JSON / CSV / DOCX / PDF)
+# BELGE / DOSYA ANALİZİ
+# Ayrıntılı hat: file_processing paketi (algılama + güvenlik + adaptörler).
+# Eski tek fonksiyonlu çıkarıcılar kaldırıldı; geriye uyumluluk sabiti korunur.
 # ============================================================
 
-MAX_DOC_BYTES = 5 * 1024 * 1024  # 5MB
-
-def extract_docx_text(data: bytes) -> str:
-    """DOCX = ZIP → word/document.xml' den metin akarını çıkarır."""
-    try:
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            xml_raw = z.read("word/document.xml")
-        xml_text = xml_raw.decode("utf-8", errors="ignore")
-        paragraphs = []
-        for para in re.split(r"</w:p>", xml_text):
-            pieces = re.findall(r"<w:t[^>]*>(.*?)</w:t>", para, re.DOTALL)
-            if pieces:
-                paragraphs.append("".join(pieces))
-        return "\n".join(paragraphs)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"DOCX belgesi çözümlenemedi: {exc}")
-
-def extract_pdf_text(data: bytes) -> str:
-    """PDF → metin. pypdf paketi kurulu olmalıdır (opsiyonel bağımlılık)."""
-    if not HAS_PYPDF:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "PDF desteği sunucuda henüz kurulmamış. PDF analizi için yönetici aşağıdaki komutu çalıştırmalıdır: "
-                "\"pip install pypdf\". Bu arada belgeyi TXT/DOCX olarak yükleyebilirsiniz."
-            )
-        )
-    try:
-        reader = PdfReader(io.BytesIO(data))
-        pages = []
-        for page in reader.pages[:40]:  # aşırı büyük PDF'leri sınırla
-            try:
-                pages.append(page.extract_text() or "")
-            except Exception:
-                pages.append("")
-        return "\n".join(pages)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"PDF belgesi çözümlenemedi: {exc}")
-
-def detect_extract_text(filename: str, content_bytes: bytes) -> tuple:
-    """Dosya türünü algılar ve metni çıkarır. Dönen: (text, filetype)."""
-    lower_name = (filename or "").lower()
-    header = content_bytes[:8] if content_bytes else b""
-
-    if lower_name.endswith(".docx") or header.startswith(b"PK") and b"word/" in content_bytes[:2000]:
-        return extract_docx_text(content_bytes), "docx"
-
-    if lower_name.endswith(".pdf") or header.startswith(b"%PDF-"):
-        return extract_pdf_text(content_bytes), "pdf"
-
-    if lower_name.endswith((".txt", ".md", ".markdown", ".json", ".csv", ".log", ".py", ".js", ".ts", ".html", ".css", ".xml", ".yaml", ".yml")):
-        return content_bytes.decode("utf-8", errors="ignore"), "text"
-
-    # Uzantı bilinmiyorsa metin denemesi yap
-    generic = content_bytes.decode("utf-8", errors="ignore")
-    if generic and any(ch.isprintable() or ch in "\n\r\t" for ch in generic[:200]):
-        return generic, "text"
-    raise HTTPException(
-        status_code=400,
-        detail="Desteklenmeyen dosya biçimi. TXT, MD, JSON, CSV, DOCX veya PDF yükleyin."
-    )
+MAX_DOC_BYTES = MAX_UPLOAD_BYTES  # Geriye uyumluluk (artık evrensel sınır)
 
 # ============================================================
 # ÇOKLU AJAN YAZILIM EKİBİ (SOFTWARE TEAM)
@@ -968,6 +988,9 @@ async def root():
         "creator": "Arel (LuminaStudios)",
         "firebase_connected": FIREBASE_ENABLED,
         "firebase_project": FIREBASE_PROJECT_ID,
+        "firebase_token_verification": (
+            "admin_sdk" if FIREBASE_ENABLED else ("google_auth" if HAS_GOOGLE_AUTH else "disabled")
+        ),
         "smart_ui_ready": True,
         "media_serving": True,
         "providers": list_configured_providers(),
@@ -980,12 +1003,21 @@ async def health_check():
         "status": "healthy",
         "firebase": "active" if FIREBASE_ENABLED else "local_fallback",
         "firebase_project": FIREBASE_PROJECT_ID,
+        "firebase_token_verification": (
+            "admin_sdk" if FIREBASE_ENABLED else ("google_auth" if HAS_GOOGLE_AUTH else "disabled")
+        ),
         "gemini_configured": bool(GEMINI_API_KEY),
         "groq_configured": bool(GROQ_API_KEY),
         "github_configured": bool(GITHUB_TOKEN),
         "pypdf_enabled": HAS_PYPDF,
-        "providers": list_configured_providers()
+        "providers": list_configured_providers(),
+        "provider_status": list_provider_status(),
     }
+
+@app.get("/api/v1/providers")
+async def providers_endpoint():
+    """Sağlayıcı/model yetenekleri ve yerel devre kesici durumu (sır içermez)."""
+    return {"success": True, **list_provider_status()}
 
 @app.get("/api/v1/quota")
 async def get_quota_endpoint(user: dict = Depends(verify_token)):
@@ -1213,16 +1245,33 @@ class ValidateSmartUIRequest(BaseModel):
 
 @app.post("/api/v1/smart-ui/validate")
 async def validate_smart_ui_endpoint(req: ValidateSmartUIRequest):
-    sanitized = sanitize_smart_ui_payload(req.data)
+    result = validate_smart_ui_payload(req.ui_type, req.data)
     return {
         "success": True,
-        "valid": True,
-        "sanitized_data": sanitized
+        "valid": result["valid"],
+        "errors": result["errors"],
+        "sanitized_data": result["sanitized_data"],
+        "supported_types": sorted(SUPPORTED_UI_TYPES),
     }
 
+@app.get("/api/v1/smart-ui/components")
+async def smart_ui_components_endpoint():
+    """Frontend ve dokümantasyon için güvenli bileşen şemaları."""
+    return {"success": True, **get_smart_ui_catalog()}
+
 # ============================================================
-# DOSYA & BELGE ANALİZİ ENDPOINT
+# DOSYA & BELGE ANALİZİ ENDPOINT'LERİ
 # ============================================================
+
+@app.get("/api/v1/files/formats")
+async def file_formats_endpoint():
+    """Desteklenen dosya kategorileri ve biçimleri."""
+    return {
+        "success": True,
+        **supported_formats(),
+        "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+        "max_text_chars": MAX_TEXT_CHARS,
+    }
 
 @app.post("/api/v1/documents/analyze")
 async def analyze_document_endpoint(
@@ -1232,27 +1281,107 @@ async def analyze_document_endpoint(
     uid = user.get("uid", "guest_user")
     enforce_rate_limit(uid)
 
-    content_bytes = await file.read()
-    if len(content_bytes) > MAX_DOC_BYTES:
-        raise HTTPException(status_code=400, detail=f"Dosya boyutu çok büyük (azami {MAX_DOC_BYTES // (1024*1024)}MB).")
+    # Sınırsız okumayı önle: azami boyut + 1 bayt oku, aşımı hemen reddet.
+    content_bytes = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dosya boyutu çok büyük. Azami {MAX_UPLOAD_BYTES // (1024 * 1024)} MB yükleyebilirsiniz."
+        )
+    if not content_bytes:
+        raise HTTPException(status_code=400, detail="Boş dosya analiz edilemez.")
 
-    text_content, filetype = detect_extract_text(file.filename or "belge", content_bytes)
-    text_content = text_content.strip()
+    try:
+        result = analyze_file(
+            filename=file.filename,
+            data=content_bytes,
+            declared_mime=file.content_type,
+        )
+    except FileAnalysisError as exc:
+        logger.info(f"Dosya reddedildi ({exc.code}): {file.filename}")
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    except Exception as exc:
+        logger.exception("Beklenmeyen dosya analizi hatası")
+        raise HTTPException(
+            status_code=500,
+            detail="Dosya analizi sırasında beklenmeyen bir sunucu hatası oluştu."
+        ) from exc
 
-    if not text_content:
-        raise HTTPException(status_code=400, detail="Belgede okunabilir metin bulunamadı.")
+    return result
 
-    preview = text_content[:3000]
-    excerpt = text_content[:1200]  # sohbete ekli belge olarak kullanılacak özet
+# ============================================================
+# ORTAK SOHBET BAĞLAMI (CHAT + STREAM)
+# ============================================================
 
-    return {
-        "success": True,
-        "filename": file.filename,
-        "filetype": filetype,
-        "characters": len(text_content),
-        "preview": preview,
-        "excerpt": excerpt
-    }
+def is_software_project_request(agent_mode: str, user_input: str) -> bool:
+    return (
+        agent_mode == "software"
+        or user_input.startswith("/proje")
+        or any(k in user_input.casefold() for k in ["proje oluştur", "uygulama geliştir", "sistem kur", "adım adım kodla"])
+    )
+
+
+def build_chat_system_content(
+    agent_mode: str,
+    personality: str,
+    user_profile: dict,
+    attached_document: Optional[AttachedDocument] = None,
+    web_context: Optional[str] = None,
+) -> str:
+    """Ajan modu, kişilik, hafıza, ekli belge ve web bağlamını tek yerde birleştirir."""
+    if agent_mode == "math":
+        base_prompt = SYSTEM_PROMPT_MATH
+    elif agent_mode == "research":
+        base_prompt = SYSTEM_PROMPT_RESEARCH
+    else:
+        base_prompt = SYSTEM_PROMPT_GENERAL
+
+    personality_key = (personality or "standard").lower().strip()
+    personality_prompt = PERSONALITY_PROMPTS.get(personality_key, PERSONALITY_PROMPTS["standard"])
+
+    parts = [base_prompt]
+    if personality_prompt:
+        parts.append(personality_prompt)
+
+    memory_block = build_memory_block(user_profile)
+    if memory_block:
+        parts.append(memory_block)
+
+    if attached_document and attached_document.excerpt:
+        parts.append(
+            f"📎 EKLİ BELGE ({attached_document.filename}):\n"
+            f"{attached_document.excerpt}\n"
+            "Kullanıcının sorularını bu belgedeki bilgilere dayanarak yanıtla."
+        )
+
+    if web_context:
+        parts.append(
+            f"📡 GÜNCEL İNTERNET VERİLERİ:\n{web_context}\n\n"
+            "Lütfen yukarıdaki verileri cevabına doğal bir dille ve kaynaklı olarak aktar."
+        )
+
+    return "\n\n".join(p for p in parts if p)
+
+
+def prepare_chat_messages(
+    user_input: str,
+    user_uid: str,
+    agent_mode: str,
+    personality: str,
+    user_profile: dict,
+    attached_document: Optional[AttachedDocument] = None,
+) -> List[Dict[str, str]]:
+    """Web bağlamını (gerekiyorsa) toplar ve modele gönderilecek mesajları kurar."""
+    needs_web = needs_fresh_data(user_input) or agent_mode == "research"
+    web_context = fetch_web_context(user_input) if needs_web else None
+    system_content = build_chat_system_content(
+        agent_mode, personality, user_profile, attached_document, web_context
+    )
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
+    messages.extend(load_recent_history(user_uid))
+    messages.append({"role": "user", "content": user_input})
+    return messages
+
 
 # ============================================================
 # SOHBET (CHAT) ENDPOINT'İ
@@ -1323,55 +1452,21 @@ def chat_endpoint(
     tier = user_profile.get("subscription_tier", "standart")
 
     # 7. Çoklu Ajan Yazılım Ekibi
-    is_software_project = (
-        agent_mode == "software" or
-        user_input.startswith("/proje") or
-        any(k in user_input.casefold() for k in ["proje oluştur", "uygulama geliştir", "sistem kur", "adım adım kodla"])
-    )
+    is_software_project = is_software_project_request(agent_mode, user_input)
 
     try:
         if is_software_project:
             bot_reply = run_software_team_pipeline(user_input, subscription_tier=tier, custom_api_key=req.custom_groq_key)
             used_model_name = "Lumina Software Team"
         else:
-            personality = (req.personality or "standard").lower().strip()
-            personality_prompt = PERSONALITY_PROMPTS.get(personality, PERSONALITY_PROMPTS.get("standard", ""))
-
-            if agent_mode == "math":
-                base_prompt = SYSTEM_PROMPT_MATH
-            elif agent_mode == "research":
-                base_prompt = SYSTEM_PROMPT_RESEARCH
-            else:
-                base_prompt = SYSTEM_PROMPT_GENERAL
-
-            web_context = fetch_web_context(user_input) if (needs_fresh_data(user_input) or agent_mode == "research") else None
-            memory_block = build_memory_block(user_profile)
-
-            system_content = f"{base_prompt}\n\n{personality_prompt}" if personality_prompt else base_prompt
-            if memory_block:
-                system_content = f"{system_content}\n\n{memory_block}"
-
-            # Ekli belge içerik desteği
-            if req.attached_document and req.attached_document.excerpt:
-                attached = req.attached_document
-                system_content = (
-                    f"{system_content}\n\n"
-                    f"📎 EKLİ BELGE ({attached.filename}):\n"
-                    f"{attached.excerpt}\n"
-                    "Kullanıcının sorularını bu belgedeki bilgilere dayanarak yanıtla."
-                )
-
-            if web_context:
-                system_content = (
-                    f"{system_content}\n\n"
-                    f"📡 GÜNCEL İNTERNET VERİLERİ:\n"
-                    f"{web_context}\n\n"
-                    f"Lütfen yukarıdaki verileri cevabına doğal bir dille ve kaynaklı olarak aktar."
-                )
-
-            messages = [{"role": "system", "content": system_content}]
-            messages.extend(load_recent_history(user_uid))
-            messages.append({"role": "user", "content": user_input})
+            messages = prepare_chat_messages(
+                user_input=user_input,
+                user_uid=user_uid,
+                agent_mode=agent_mode,
+                personality=(req.personality or "standard"),
+                user_profile=user_profile,
+                attached_document=req.attached_document,
+            )
 
             bot_reply, used_model_name = execute_chat_completion(
                 messages,
@@ -1429,21 +1524,49 @@ def chat_stream_endpoint(
 
     user_profile = get_or_create_user_profile(user_uid, email=user_email)
     tier = user_profile.get("subscription_tier", "standart")
+    agent_mode = (req.agent_mode or "general").lower().strip()
 
-    memory_block = build_memory_block(user_profile)
-    system_content = f"{SYSTEM_PROMPT_GENERAL}\n\n{memory_block}" if memory_block else SYSTEM_PROMPT_GENERAL
+    def _sse(payload: dict) -> str:
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-    if req.attached_document and req.attached_document.excerpt:
-        attached = req.attached_document
-        system_content = (
-            f"{system_content}\n\n"
-            f"📎 EKLİ BELGE ({attached.filename}):\n{attached.excerpt}\n"
-            "Kullanıcının sorularını bu belgedeki bilgilere dayanarak yanıtla."
+    def _single_shot_stream(reply: str, model_label: str):
+        """Akış desteklemeyen yollar (kurucu/ismi/hazır yanıt) için SSE sarmalayıcı."""
+        def _gen():
+            smart_blocks = extract_smart_ui_blocks(reply)
+            save_chat_turn(user_uid, user_input, reply)
+            yield _sse({"chunk": reply})
+            yield _sse({
+                "done": True,
+                "quota": format_quota_response(user_uid, has_custom_key),
+                "model_used": model_label,
+                "smart_ui": smart_blocks,
+            })
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    creator_reply = check_creator_question(user_input)
+    if creator_reply:
+        return _single_shot_stream(creator_reply, "Lumina")
+
+    if user_profile.get("name") and is_name_question(user_input):
+        return _single_shot_stream(
+            random.choice(NAME_ANSWERS).format(name=user_profile["name"]), "Lumina"
         )
 
-    messages = [{"role": "system", "content": system_content}]
-    messages.extend(load_recent_history(user_uid))
-    messages.append({"role": "user", "content": user_input})
+    if is_software_project_request(agent_mode, user_input):
+        try:
+            reply = run_software_team_pipeline(user_input, subscription_tier=tier, custom_api_key=req.custom_groq_key)
+            return _single_shot_stream(reply, "Lumina Software Team")
+        except ProviderError as exc:
+            raise raise_provider_http_error(exc)
+
+    messages = prepare_chat_messages(
+        user_input=user_input,
+        user_uid=user_uid,
+        agent_mode=agent_mode,
+        personality=(req.personality or "standard"),
+        user_profile=user_profile,
+        attached_document=req.attached_document,
+    )
 
     # Kaskad destekli canlı akış kurulumu (CEVAP: hata koduna göre sağlayıcı değişimi)
     try:
@@ -1468,14 +1591,14 @@ def chat_stream_endpoint(
         try:
             for chunk in generator:
                 full_reply.append(chunk)
-                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
 
             joined = "".join(full_reply)
             smart_blocks = extract_smart_ui_blocks(joined)
             save_chat_turn(user_uid, user_input, joined)
-            yield f"data: {json.dumps({'done': True, 'quota': format_quota_response(user_uid, has_custom_key), 'model_used': used_label, 'smart_ui': smart_blocks})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'quota': format_quota_response(user_uid, has_custom_key), 'model_used': used_label, 'smart_ui': smart_blocks}, ensure_ascii=False)}\n\n"
         except Exception as exc:
-            yield f"data: {json.dumps({'error': f'Akış sırasında hata oluştu: {exc}'})}\n\n"
+            yield f"data: {json.dumps({'error': f'Akış sırasında hata oluştu: {exc}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 

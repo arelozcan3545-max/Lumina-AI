@@ -370,6 +370,111 @@
             font-size: 12px;
         }
 
+        /* YENİ HESAP KARTI (SIDEBAR) */
+        .account-card {
+            padding: 10px;
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+        }
+
+        .account-main {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            overflow: hidden;
+        }
+
+        .account-avatar {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 750;
+            color: var(--accent-text);
+            background: linear-gradient(135deg, var(--accent), rgba(255,255,255,0.25));
+            box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+        }
+
+        .account-text {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .account-name {
+            font-size: 12.5px;
+            font-weight: 650;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .account-sub {
+            font-size: 10.5px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .account-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 5px;
+        }
+
+        .account-action-btn {
+            padding: 6px 4px;
+            border-radius: 7px;
+            font-size: 10.5px;
+            font-weight: 600;
+            font-family: inherit;
+            color: var(--text-secondary);
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: 0.15s ease;
+        }
+
+        .account-action-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+        }
+
+        .account-action-btn.account-google {
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.08);
+        }
+
+        .account-logout-btn {
+            width: 100%;
+            padding: 3px 4px 2px;
+            border: none;
+            background: transparent;
+            color: #ef4444;
+            font-size: 10.5px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            opacity: 0.85;
+        }
+
+        .account-logout-btn:hover { opacity: 1; }
+
+        .account-actions[hidden],
+        .account-logout-btn[hidden] { display: none; }
+
         /* =========================================================
            MAIN CHAT AREA (FLUID FULLSCREEN)
         ========================================================= */
@@ -1028,6 +1133,315 @@
             transition: 0.15s ease;
         }
         .modal-action-btn:hover { opacity: 0.9; }
+
+        /* =========================================================
+           YENİ GİRİŞ / HESAP EKRANI
+        ========================================================= */
+        .auth-box {
+            max-width: 430px;
+            padding: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            position: relative;
+            border: 1px solid var(--border-hover);
+            box-shadow: 0 30px 80px rgba(0,0,0,0.85);
+        }
+
+        .auth-close-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 3;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(0,0,0,0.25);
+            color: var(--text-secondary);
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.15s ease;
+        }
+
+        .auth-close-btn:hover {
+            color: var(--text-primary);
+            background: rgba(0,0,0,0.45);
+        }
+
+        .auth-hero {
+            position: relative;
+            padding: 28px 24px 22px;
+            text-align: center;
+            background:
+                radial-gradient(circle at 50% 0%, rgba(59,130,246,0.30), transparent 62%),
+                linear-gradient(180deg, rgba(255,255,255,0.06), transparent);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .auth-hero-logo {
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 12px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 800;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            box-shadow: 0 10px 28px rgba(59,130,246,0.4);
+        }
+
+        .auth-hero h2 {
+            margin: 0 0 6px;
+            font-size: 19px;
+            font-weight: 750;
+            letter-spacing: -0.2px;
+        }
+
+        .auth-hero p {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.55;
+            color: var(--text-secondary);
+        }
+
+        .auth-body {
+            padding: 18px 22px 22px;
+        }
+
+        .auth-panel { display: none; }
+        .auth-panel.active { display: block; animation: fadeIn 0.18s ease; }
+
+        .auth-option-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 11px 13px;
+            margin-bottom: 9px;
+            border-radius: 11px;
+            border: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-family: inherit;
+            cursor: pointer;
+            text-align: left;
+            transition: 0.15s ease;
+        }
+
+        .auth-option-btn:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+            transform: translateY(-1px);
+        }
+
+        .auth-option-btn.google {
+            background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+            border-color: rgba(255,255,255,0.16);
+        }
+
+        .auth-option-icon {
+            width: 30px;
+            height: 30px;
+            flex-shrink: 0;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 800;
+            background: rgba(255,255,255,0.09);
+        }
+
+        .auth-option-btn.google .auth-option-icon {
+            background: #fff;
+            color: #4285f4;
+        }
+
+        .auth-option-text {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .auth-option-text strong {
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .auth-option-text small {
+            font-size: 10.5px;
+            color: var(--text-muted);
+        }
+
+        .auth-option-arrow {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin: 13px 0 11px;
+            color: var(--text-muted);
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-weight: 650;
+        }
+
+        .auth-divider::before,
+        .auth-divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .auth-email-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .auth-ghost-btn {
+            padding: 10px;
+            border-radius: 9px;
+            border: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 12.5px;
+            font-weight: 650;
+            cursor: pointer;
+            transition: 0.15s ease;
+        }
+
+        .auth-ghost-btn:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+        }
+
+        .auth-ghost-btn.primary {
+            background: var(--accent);
+            color: var(--accent-text);
+            border-color: transparent;
+        }
+
+        .auth-ghost-btn.primary:hover { opacity: 0.92; }
+
+        .auth-guest-btn {
+            width: 100%;
+            margin-top: 14px;
+            padding: 9px;
+            border-radius: 9px;
+            border: 1px dashed var(--border-hover);
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.15s ease;
+        }
+
+        .auth-guest-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--accent);
+        }
+
+        .auth-trust {
+            margin: 10px 0 0;
+            text-align: center;
+            font-size: 10px;
+            line-height: 1.5;
+            color: var(--text-muted);
+        }
+
+        .auth-back-btn {
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 0 0 10px;
+            cursor: pointer;
+        }
+
+        .auth-back-btn:hover { color: var(--text-primary); }
+
+        .auth-form-title {
+            margin: 0 0 3px;
+            font-size: 16px;
+            font-weight: 750;
+        }
+
+        .auth-form-sub {
+            margin: 0 0 14px;
+            font-size: 11.5px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .auth-error {
+            display: none;
+            margin: 0 0 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 11.5px;
+            line-height: 1.45;
+            color: #fca5a5;
+            background: rgba(239,68,68,0.12);
+            border: 1px solid rgba(239,68,68,0.3);
+        }
+
+        .auth-error.visible { display: block; }
+
+        .auth-submit {
+            width: 100%;
+            padding: 11px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            color: #fff;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.15s ease;
+        }
+
+        .auth-submit:hover { opacity: 0.92; }
+        .auth-submit:disabled { opacity: 0.55; cursor: wait; }
+
+        .auth-switch {
+            margin-top: 12px;
+            text-align: center;
+            font-size: 11.5px;
+            color: var(--text-secondary);
+        }
+
+        .auth-switch button {
+            border: none;
+            background: none;
+            color: var(--accent);
+            font-family: inherit;
+            font-size: 11.5px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 2px;
+        }
+
+        .auth-switch button:hover { text-decoration: underline; }
 
         /* LIGHTBOX */
         #lightbox-modal {
@@ -1858,6 +2272,92 @@
             background: var(--bg-card-hover);
         }
 
+        /* SMART UI: CHECKLIST */
+        .smart-checklist {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .smart-checklist-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .smart-checklist-item input {
+            margin-top: 2px;
+            accent-color: var(--accent);
+        }
+
+        .smart-checklist-item.done span {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+
+        .smart-checklist-progress {
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        /* SMART UI: PROGRESS TRACKER */
+        .smart-progress-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .smart-progress-head {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12.5px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            gap: 8px;
+        }
+
+        .smart-progress-bar {
+            height: 7px;
+            background: var(--bg-base);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .smart-progress-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .smart-progress-detail {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 5px;
+        }
+
+        /* SMART UI: DATA TABLE */
+        .data-table-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-card);
+        }
+
+        .smart-data-caption {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin: 0 0 8px;
+        }
+
         /* CUSTOM PLAN BUILDER */
         .custom-builder-box {
             background: var(--bg-card);
@@ -2117,7 +2617,7 @@
                 <div class="brand-logo-area" onclick="startNewChat()">
                     <div class="brand-logo-icon">L</div>
                     <span class="brand-title">Lumina AI</span>
-                    <span class="brand-badge">v2.0</span>
+                    <span class="brand-badge">v3.2</span>
                 </div>
                 <button class="toggle-sidebar-btn" onclick="toggleSidebar()" title="Menüyü Kapat">
                     ✕
@@ -2128,26 +2628,6 @@
             <button class="new-chat-btn" onclick="startNewChat()">
                 <span>➕</span> Yeni Sohbet
             </button>
-
-            <!-- AGENT MODES -->
-            <div class="sidebar-section-title">Ajan Modları</div>
-            <ul class="agent-nav-list">
-                <li class="agent-nav-item active" data-mode="general" onclick="selectAgentMode('general')">
-                    <span>🌟</span> Genel Asistan
-                </li>
-                <li class="agent-nav-item" data-mode="software" onclick="selectAgentMode('software')">
-                    <span>💻</span> Çoklu Ajan Yazılım
-                </li>
-                <li class="agent-nav-item" data-mode="math" onclick="selectAgentMode('math')">
-                    <span>📐</span> Matematik & Bilim
-                </li>
-                <li class="agent-nav-item" data-mode="research" onclick="selectAgentMode('research')">
-                    <span>🌐</span> Canlı Bilgi & Web
-                </li>
-                <li class="agent-nav-item" data-mode="artist" onclick="selectAgentMode('artist')">
-                    <span>🎨</span> Sanat & Görsel
-                </li>
-            </ul>
 
             <!-- RECENT SESSIONS -->
             <div class="sidebar-section-title" style="margin-top:10px;">Geçmiş Sohbetler</div>
@@ -2177,19 +2657,22 @@
                     <button class="sidebar-btn" onclick="adjustFontSize(0.1)" title="Yazıyı Büyüt">A+</button>
                 </div>
 
-                <div class="user-pill-bar">
-                    <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
-                        <span style="font-size:14px;">👤</span>
-                        <span id="sidebar-user-name" style="white-space:nowrap; text-overflow:ellipsis; overflow:hidden;">Misafir Modu</span>
+                <div class="account-card">
+                    <div class="account-main">
+                        <div class="account-avatar" id="sidebar-avatar">?</div>
+                        <div class="account-text">
+                            <span class="account-name" id="sidebar-user-name">Misafir Modu</span>
+                            <span class="account-sub" id="sidebar-user-sub">Giriş yap veya hesap oluştur</span>
+                        </div>
                     </div>
-                    <div style="display:flex; gap:4px;">
-                        <button class="sidebar-btn" style="padding:4px 8px; border:none;" onclick="openAuthModal()" title="Giriş / Hesap">
-                            🔑
-                        </button>
-                        <button class="sidebar-btn" style="padding:4px 8px; border:none; color:#ef4444;" onclick="handleLogout()" title="Çıkış Yap">
-                            🚪
-                        </button>
+
+                    <div class="account-actions" id="account-guest-actions">
+                        <button class="account-action-btn account-google" onclick="openAuthModal({ provider: 'google' })" title="Google ile giriş yap">Google</button>
+                        <button class="account-action-btn" onclick="openAuthModal({ provider: 'email', mode: 'login' })" title="E-posta ile giriş yap veya kayıt ol">E-posta</button>
+                        <button class="account-action-btn" onclick="continueAsGuest()" title="Misafir olarak devam et">Misafir</button>
                     </div>
+
+                    <button class="account-logout-btn" id="account-logout-btn" onclick="handleLogout()" title="Çıkış Yap" hidden>Çıkış Yap</button>
                 </div>
             </div>
 
@@ -2237,7 +2720,7 @@
                     <div class="starter-hero" id="starter-hero">
                         <div class="starter-hero-icon">L</div>
                         <h2>Lumina AI ile Ne Yapmak İstersin?</h2>
-                        <p>Duygusal, zeki ve çoklu ajan destekli yapay zeka. Matematik problemlerini adım adım çözer, projelerinizi baştan sona kodlar ve foto-gerçekçi görseller üretir.</p>
+                        <p>Evrensel dosya analizi, adım adım matematik, çoklu ajan yazılım ekibi ve foto-gerçekçi görsel üretimi tek bir zeki asistanada.</p>
 
                         <div class="starter-grid">
                             <div class="starter-chip" onclick="quickAsk('Zor bir matematik problemini adım adım açıkla: 3x^2 - 12x + 9 = 0')">
@@ -2248,6 +2731,16 @@
                             <div class="starter-chip" onclick="selectAgentMode('software'); quickAsk('/proje React ve FastAPI ile tam donanımlı bir Görev Takip uygulaması mimarisi ve çalışan kodları')">
                                 <div class="starter-chip-title">💻 Çoklu Ajan Yazılım</div>
                                 <div class="starter-chip-desc">Mimar, Geliştirici ve QA 3'lü ajan ekibiyle baştan sona kodlayın.</div>
+                            </div>
+
+                            <div class="starter-chip" onclick="triggerDocUpload()">
+                                <div class="starter-chip-title">📄 Belge & Dosya Analizi</div>
+                                <div class="starter-chip-desc">PDF, kod, tablo, arşiv ve medya dosyalarını güvenle analiz ettirin.</div>
+                            </div>
+
+                            <div class="starter-chip" onclick="selectAgentMode('research'); quickAsk('Güncel bir konuyu derinlemesine araştır ve güvenilir kaynaklarla özetle: yapay zeka ajanları 2026')">
+                                <div class="starter-chip-title">🌐 Derin Araştırma</div>
+                                <div class="starter-chip-desc">Güncel bilgiyi web ajanıyla tarayın, kaynaklı ve düzenli özet alın.</div>
                             </div>
 
                             <div class="starter-chip" onclick="openImageStudioModal()">
@@ -2276,7 +2769,7 @@
                     <button class="input-tool-btn" id="attach-doc-btn" onclick="triggerDocUpload()" title="Belge / Kod Dosyası Yükle">
                         📎
                     </button>
-                    <input type="file" id="doc-upload-input" style="display:none;" accept=".txt,.pdf,.docx,.csv,.json,.py,.js,.html,.css,.md" onchange="handleDocUpload(event)">
+                    <input type="file" id="doc-upload-input" style="display:none;" accept=".txt,.md,.markdown,.pdf,.docx,.rtf,.epub,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.xlsx,.pptx,.odt,.ods,.odp,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.svg,.mp3,.wav,.flac,.ogg,.opus,.m4a,.aac,.mp4,.mov,.mkv,.webm,.avi,.m4v,.zip,.tar,.gz,.tgz,.bz2,.xz,.apk,.jar,.py,.js,.mjs,.cjs,.ts,.tsx,.jsx,.java,.c,.h,.cpp,.hpp,.cs,.go,.rs,.rb,.php,.swift,.kt,.sql,.sh,.bash,.ps1,.css,.scss,.dart,.lua,.r,.toml,.ini,.cfg" onchange="handleDocUpload(event)">
 
                     <button class="input-tool-btn" onclick="openImageStudioModal()" title="Görsel Üret">
                         🎨
@@ -2304,7 +2797,7 @@
                 </div>
 
                 <div class="input-footer-caption">
-                    Lumina AI Engine v3.1 • Güvenli ve Saygılı İletişim İlkeleri Devrede
+                    Lumina AI Engine v3.2 • Güvenli ve Saygılı İletişim İlkeleri Devrede
                 </div>
             </div>
 
@@ -2675,39 +3168,63 @@
          5. AUTH / LOGIN MODAL
     ========================================================= -->
     <div class="modal-backdrop" id="auth-modal">
-        <div class="modal-box">
-            <div class="modal-box-header">
-                <h3>🔑 Giriş & Hesap</h3>
-                <button class="close-btn" onclick="closeAuthModal()">✕</button>
+        <div class="modal-box auth-box">
+            <button class="auth-close-btn" onclick="dismissAuthGate()" title="Kapat">✕</button>
+
+            <div class="auth-hero">
+                <div class="auth-hero-logo">L</div>
+                <h2>Lumina AI'ya Hoş Geldin</h2>
+                <p>Hesabınla devam et, yeni bir hesap oluştur veya misafir olarak keşfet.</p>
             </div>
 
-            <div class="form-row">
-                <label>E-posta</label>
-                <input type="email" id="auth-email" placeholder="ornek@mail.com">
-            </div>
+            <div class="auth-body">
+                <!-- SEÇİM EKRANI -->
+                <div class="auth-panel active" id="auth-panel-choice">
+                    <button class="auth-option-btn google" onclick="handleGoogleLogin()">
+                        <span class="auth-option-icon">G</span>
+                        <span class="auth-option-text">
+                            <strong>Google ile devam et</strong>
+                            <small>Tek tıkla güvenli giriş</small>
+                        </span>
+                        <span class="auth-option-arrow">→</span>
+                    </button>
 
-            <div class="form-row">
-                <label>Şifre</label>
-                <input type="password" id="auth-password" placeholder="••••••••">
-            </div>
+                    <div class="auth-divider"><span>veya e-posta ile</span></div>
 
-            <div style="display:flex; gap:8px; margin-top:14px;">
-                <button class="modal-action-btn" style="flex:1;" onclick="handleEmailLogin()">Giriş Yap</button>
-                <button class="modal-action-btn" style="flex:1; background:var(--bg-card-hover); color:var(--text-primary);" onclick="handleEmailRegister()">Kayıt Ol</button>
-            </div>
+                    <div class="auth-email-actions">
+                        <button class="auth-ghost-btn primary" onclick="showEmailForm('login')">Giriş Yap</button>
+                        <button class="auth-ghost-btn" onclick="showEmailForm('register')">Kayıt Ol</button>
+                    </div>
 
-            <button class="modal-action-btn" style="margin-top:8px; background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border);" onclick="handleGoogleLogin()">
-                Google ile Giriş
-            </button>
+                    <button class="auth-guest-btn" onclick="continueAsGuest()">⚡ Misafir olarak devam et</button>
+                    <p class="auth-trust">Misafir modunda sohbetler yalnızca bu cihazda saklanır.</p>
+                </div>
 
-            <button class="modal-action-btn" style="margin-top:8px; background:transparent; color:var(--text-secondary); border:1px dashed var(--border);" onclick="continueAsGuest()">
-                ⚡ Misafir Olarak Devam Et
-            </button>
+                <!-- E-POSTA FORMU -->
+                <div class="auth-panel" id="auth-panel-email">
+                    <button class="auth-back-btn" onclick="showAuthChoice()">← Geri</button>
+                    <h3 class="auth-form-title" id="auth-form-title">E-posta ile Giriş</h3>
+                    <p class="auth-form-sub" id="auth-form-subtitle">Hesabına giriş yaparak kaldığın yerden devam et.</p>
 
-            <div style="text-align:center; margin-top:12px; padding-top:10px; border-top:1px solid var(--border);">
-                <button type="button" style="background:none; border:none; color:var(--text-secondary); font-size:12px; cursor:pointer; text-decoration:underline;" onclick="handlePasswordReset()">
-                    Şifremi Unuttum
-                </button>
+                    <div class="form-row">
+                        <label for="auth-email">E-posta</label>
+                        <input type="email" id="auth-email" placeholder="ornek@mail.com" autocomplete="email" spellcheck="false">
+                    </div>
+
+                    <div class="form-row">
+                        <label for="auth-password">Şifre</label>
+                        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if (event.key === 'Enter') submitEmailAuth()">
+                    </div>
+
+                    <div class="auth-error" id="auth-error" role="alert"></div>
+
+                    <button class="auth-submit" id="auth-submit-btn" onclick="submitEmailAuth()">Giriş Yap</button>
+
+                    <div class="auth-switch">
+                        <span id="auth-switch-text">Hesabın yok mu?</span>
+                        <button type="button" id="auth-switch-btn" onclick="toggleEmailMode()">Kayıt Ol</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -2943,7 +3460,9 @@
 
     <!-- App Logic -->
     <div id="toast-stack" aria-live="polite"></div>
-    <script src="config.js" onerror=""></script>
-    <script src="app.js"></script>
+    <!-- Sürüm sorgusu, güncellemelerde tarayıcı HTTP önbelleğinin eski
+         config.js/app.js dosyalarını sunmasını engeller. Her sürümde artırın. -->
+    <script src="config.js?v=3.2.2" onerror=""></script>
+    <script src="app.js?v=3.2.2"></script>
 </body>
 </html>

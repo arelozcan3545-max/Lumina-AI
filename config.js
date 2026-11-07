@@ -19,12 +19,19 @@ window.LUMINA_CONFIG = {
     BACKEND_URL: "",
 
     // 5. Firebase Web Yapılandırması (lumina-ai-a42e0)
+    // Değerler google-services.json dosyasından alınmıştır.
+    // NOT: google-services.json yalnızca Android uygulaması içerir; burada
+    // kullanılan appId Android appId'sidir. Firebase Console'da bir WEB
+    // uygulaması oluşturulursa appId mutlaka web appId ile değiştirilmelidir.
+    // apiKey istemci tarafında görünür; gizli anahtar DEĞİLDİR. Yine de
+    // Firebase Console > API anahtarları bölümünden HTTP referrer kısıtlaması
+    // uygulanması önerilir.
     FIREBASE_CONFIG: {
-        apiKey: "",
+        apiKey: "AIzaSyDLFO-qqooGlRePsyJ-LmvlKL9TuTRmWXM",
         authDomain: "lumina-ai-a42e0.firebaseapp.com",
         projectId: "lumina-ai-a42e0",
         storageBucket: "lumina-ai-a42e0.firebasestorage.app",
         messagingSenderId: "523006120281",
-        appId: ""
+        appId: "1:523006120281:android:3e72abe43fc1c05a7a3c48"
     }
 };

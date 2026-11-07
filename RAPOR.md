@@ -1,5 +1,9 @@
-# Lumina AI — Final Teknik Rapor
+# Lumina AI — Final Teknik Rapor (Tarihsel)
 **Tarih:** 16 Ekim 2026 • **Proje:** `E:\LuminaStudios Software Company\Lumina AI` • **Firebase:** `lumina-ai-a42e0`
+
+> ⚠️ **Bu belge tarihseldir.** 5 Kasım 2026 güncellemesinden önceki durumu yansıtır.
+> Güncel rapor için [FINAL_RAPOR.md](FINAL_RAPOR.md), teknik dokümantasyon için [docs/](docs/) dizinini kullanın.
+> Bu belgedeki 9 Smart UI bileşeni ve canlı Groq testi bilgileri artık güncel değildir.
 
 ---
 

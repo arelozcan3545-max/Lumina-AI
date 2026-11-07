@@ -53,6 +53,66 @@
       ],
       "subscription_price": 150,
       "subscription_updated_at": 1792144051
+    },
+    "guest_aa9464b5-a9c0-4854-95d9-2ce0c5f37900": {
+      "uid": "guest_aa9464b5-a9c0-4854-95d9-2ce0c5f37900",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1793868545,
+      "daily_usage": {
+        "date": "2026-11-05",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
+    },
+    "app0NsCmcvgZefyiQ1IJtWsX8K93": {
+      "uid": "app0NsCmcvgZefyiQ1IJtWsX8K93",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1793869006,
+      "daily_usage": {
+        "date": "2026-11-05",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
+    },
+    "guest_cef95503-5d89-4de0-b4e5-6e049a166396": {
+      "uid": "guest_cef95503-5d89-4de0-b4e5-6e049a166396",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1793871920,
+      "daily_usage": {
+        "date": "2026-11-05",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
+    },
+    "guest_413afa89-53e9-43a2-8493-2e5efaab8502": {
+      "uid": "guest_413afa89-53e9-43a2-8493-2e5efaab8502",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1794036045,
+      "daily_usage": {
+        "date": "2026-11-07",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
     }
   },
   "guest_bc5c80f7-6675-4a60-b375-4c12f11d98e3": [

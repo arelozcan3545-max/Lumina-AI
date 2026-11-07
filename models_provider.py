@@ -18,7 +18,9 @@ import json
 import time
 import logging
 import threading
+import datetime
 import requests
+from email.utils import parsedate_to_datetime
 from typing import List, Dict, Any, Optional, Generator, Callable, Tuple
 
 logger = logging.getLogger("LuminaModelProvider")
@@ -66,6 +68,151 @@ GEMINI_IMAGE_MODEL_BACKUP = "gemini-3.1-flash-lite-image"
 _AUTH_DISABLED_PROVIDERS: Dict[str, float] = {}
 _AUTH_DISABLED_TTL = 15 * 60  # 15 dakika sonra yeniden denenir
 _AUTH_DISABLE_LOCK = threading.Lock()
+
+# Devre kesici: sağlayıcı ve model bazlı geçici soğuma
+_PROVIDER_COOLDOWN: Dict[str, Dict[str, Any]] = {}
+_MODEL_COOLDOWN: Dict[str, Dict[str, Any]] = {}
+_COOLDOWN_LOCK = threading.Lock()
+DEFAULT_RATE_LIMIT_COOLDOWN = 60.0
+DEFAULT_UNAVAILABLE_COOLDOWN = 20.0
+MODEL_GONE_COOLDOWN = 3600.0
+MAX_COOLDOWN_SECS = 600.0
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """Retry-After başlığını saniyeye çevirir (sayı veya HTTP tarihi)."""
+    if not value:
+        return None
+    value = str(value).strip()
+    try:
+        seconds = float(value)
+        return max(0.0, min(seconds, MAX_COOLDOWN_SECS))
+    except ValueError:
+        pass
+    try:
+        dt = parsedate_to_datetime(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        delta = (dt - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+        return max(0.0, min(delta, MAX_COOLDOWN_SECS))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _set_provider_cooldown(provider: str, seconds: float, reason: str) -> None:
+    with _COOLDOWN_LOCK:
+        _PROVIDER_COOLDOWN[provider] = {
+            "until": time.time() + max(1.0, seconds),
+            "reason": reason[:240],
+        }
+
+
+def _provider_cooldown_remaining(provider: str) -> float:
+    with _COOLDOWN_LOCK:
+        entry = _PROVIDER_COOLDOWN.get(provider)
+        if not entry:
+            return 0.0
+        remaining = float(entry["until"]) - time.time()
+        if remaining <= 0:
+            _PROVIDER_COOLDOWN.pop(provider, None)
+            return 0.0
+        return remaining
+
+
+def _set_model_cooldown(provider: str, model: str, seconds: float, reason: str) -> None:
+    key = f"{provider}:{model}"
+    with _COOLDOWN_LOCK:
+        _MODEL_COOLDOWN[key] = {
+            "until": time.time() + max(1.0, seconds),
+            "reason": reason[:240],
+        }
+
+
+def _model_cooldown_remaining(provider: str, model: str) -> float:
+    key = f"{provider}:{model}"
+    with _COOLDOWN_LOCK:
+        entry = _MODEL_COOLDOWN.get(key)
+        if not entry:
+            return 0.0
+        remaining = float(entry["until"]) - time.time()
+        if remaining <= 0:
+            _MODEL_COOLDOWN.pop(key, None)
+            return 0.0
+        return remaining
+
+
+# ------------------------------------------------------------
+# MODEL YETENEK KAYDI
+# Doğrulanmış sağlayıcı/model kimlikleri; kesin bağlam penceresi
+# değerleri uydurulmaz, bilinmeyenler None olarak raporlanır.
+# ------------------------------------------------------------
+
+MODEL_CAPABILITIES: Dict[str, Dict[str, Any]] = {
+    GEMINI_MODEL_FLAGSHIP: {
+        "provider": "gemini", "tier": "flagship", "status": "ga",
+        "streaming": True, "vision": True, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "Google Gemini amiral gemisi metin modeli.",
+    },
+    GEMINI_MODEL_HIGH: {
+        "provider": "gemini", "tier": "pro", "status": "ga",
+        "streaming": True, "vision": True, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "Üst seviye Gemini Flash modeli.",
+    },
+    GEMINI_MODEL_PRO: {
+        "provider": "gemini", "tier": "pro", "status": "ga",
+        "streaming": True, "vision": True, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "Pro segment Gemini Flash modeli.",
+    },
+    GEMINI_MODEL_STANDARD: {
+        "provider": "gemini", "tier": "standart", "status": "ga",
+        "streaming": True, "vision": True, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "Hızlı ve verimli Gemini Flash-Lite.",
+    },
+    GEMINI_MODEL_LITE: {
+        "provider": "gemini", "tier": "ekonomi", "status": "ga",
+        "streaming": True, "vision": True, "json_mode": True, "tool_calling": False,
+        "context_window_tokens": None, "notes": "Ekonomi segment Gemini Flash-Lite.",
+    },
+    GROQ_MODEL_FLAGSHIP: {
+        "provider": "groq", "tier": "flagship", "status": "ga",
+        "streaming": True, "vision": False, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "Groq üzerinde OpenAI GPT-OSS 120B.",
+    },
+    GROQ_MODEL_STANDARD: {
+        "provider": "groq", "tier": "standart", "status": "ga",
+        "streaming": True, "vision": False, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "Groq üzerinde OpenAI GPT-OSS 20B.",
+    },
+    GROQ_MODEL_PREVIEW: {
+        "provider": "groq", "tier": "ekonomi", "status": "preview",
+        "streaming": True, "vision": False, "json_mode": True, "tool_calling": False,
+        "context_window_tokens": None, "notes": "Önizleme modeli; üretim kullanımı için kararlılık garantisi yok.",
+    },
+    GITHUB_MODEL_PRO: {
+        "provider": "github", "tier": "pro", "status": "ga",
+        "streaming": True, "vision": False, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "GitHub Models üzerinden OpenAI GPT-4o.",
+    },
+    GITHUB_MODEL_STANDARD: {
+        "provider": "github", "tier": "standart", "status": "ga",
+        "streaming": True, "vision": False, "json_mode": True, "tool_calling": True,
+        "context_window_tokens": None, "notes": "GitHub Models üzerinden OpenAI GPT-4o-mini.",
+    },
+    GEMINI_IMAGE_MODEL: {
+        "provider": "gemini", "tier": "image", "status": "ga",
+        "streaming": False, "vision": True, "json_mode": False, "tool_calling": False,
+        "context_window_tokens": None, "notes": "Gemini görsel üretim modeli (Nano Banana).",
+    },
+    GEMINI_IMAGE_MODEL_BACKUP: {
+        "provider": "gemini", "tier": "image", "status": "ga",
+        "streaming": False, "vision": True, "json_mode": False, "tool_calling": False,
+        "context_window_tokens": None, "notes": "Yedek Gemini görsel üretim modeli.",
+    },
+}
+
+
+def get_model_capabilities(model: str) -> Optional[Dict[str, Any]]:
+    return MODEL_CAPABILITIES.get(model)
 
 # ============================================================
 # TÜRKÇE HATA TAKSONOMİSİ
@@ -116,31 +263,41 @@ class ContentSafetyProviderError(ProviderError):
     kind = "content_filter"
 
 
-def _classify_provider_http_error(provider: str, model: str, status: int, body_text: str) -> ProviderError:
+def _classify_provider_http_error(
+    provider: str,
+    model: str,
+    status: int,
+    body_text: str,
+    retry_after: Optional[float] = None,
+) -> ProviderError:
     """HTTP durum kodunu Türkçe hata taksonomisine çevirir."""
     snippet = (body_text or "")[:300]
     base = f"{provider} API hatası (HTTP {status}, model={model}): {snippet}"
+
+    def _attach(exc: ProviderError) -> ProviderError:
+        exc.retry_after = retry_after  # type: ignore[attr-defined]
+        return exc
 
     if status in (401, 403):
         human = (
             f"{provider} referansı reddedildi (HTTP {status}). Anahtar geçersiz olabilir, "
             f"süresi dolmuş olabilir veya bu model için yetkiniz bulunmuyor. Model: {model}"
         )
-        return ProviderAuthError(human, provider=provider, model=model, status=status)
+        return _attach(ProviderAuthError(human, provider=provider, model=model, status=status))
     if status == 404:
         human = (
             f"{provider} bu modeli sunmuyor veya model kimliği geçersiz (HTTP 404): '{model}'. "
             "Kaskad bir sonraki model ile devam ediyor."
         )
-        return ProviderModelUnavailableError(human, provider=provider, model=model, status=status)
+        return _attach(ProviderModelUnavailableError(human, provider=provider, model=model, status=status))
     if status == 429:
         human = f"{provider} hız/sınırlama kotası doldu (HTTP 429), model={model}"
-        return ProviderRateLimitError(human, provider=provider, model=model, status=status)
+        return _attach(ProviderRateLimitError(human, provider=provider, model=model, status=status))
     if 400 <= status < 500:
         human = f"{provider} isteği reddetti (HTTP {status}, model={model}): {snippet}"
-        return ProviderUnavailableError(human, provider=provider, model=model, status=status)
+        return _attach(ProviderUnavailableError(human, provider=provider, model=model, status=status))
     human = f"{provider} sunucusu geçici olarak kullanılamıyor (HTTP {status}, model={model}): {snippet}"
-    return ProviderUnavailableError(human, provider=provider, model=model, status=status)
+    return _attach(ProviderUnavailableError(human, provider=provider, model=model, status=status))
 
 
 def _disable_provider_temporarily(provider: str):
@@ -179,6 +336,13 @@ def _retry_delay(attempt: int) -> float:
 
 def _sleep_backoff(attempt: int):
     time.sleep(_retry_delay(attempt))
+
+
+def _sleep_for_error(exc: ProviderError, attempt: int) -> None:
+    """Retry-After varsa ona uyar; yoksa üstel geri çekilme uygular."""
+    retry_after = getattr(exc, "retry_after", None)
+    delay = retry_after if retry_after is not None else _retry_delay(attempt)
+    time.sleep(max(0.0, min(float(delay), MAX_COOLDOWN_SECS)))
 
 
 # ============================================================
@@ -256,14 +420,14 @@ def call_gemini(
                 headers=_gemini_headers(api_key),
                 timeout=REQUEST_TIMEOUT_SECS
             )
-            err_exc = _classify_provider_http_error("Gemini", model, res.status_code, res.text) if not res.ok else None
+            err_exc = _classify_provider_http_error("Gemini", model, res.status_code, res.text, _parse_retry_after(res.headers.get("Retry-After"))) if not res.ok else None
             if err_exc is not None:
                 if err_exc.kind == "auth":
                     _disable_provider_temporarily("gemini")
                 last_exc = err_exc
                 if err_exc.kind == "transient" and attempt < BACKOFF_MAX_RETRIES:
                     logger.warning(f"Gemini ({model}) geçici hata, {attempt + 1}. deneme başarısız: {err_exc}")
-                    _sleep_backoff(attempt)
+                    _sleep_for_error(err_exc, attempt)
                     continue
                 raise err_exc
 
@@ -327,7 +491,7 @@ def stream_gemini(
     try:
         with requests.post(url, json=payload, headers=_gemini_headers(api_key), stream=True, timeout=STREAM_TIMEOUT_SECS) as resp:
             if not resp.ok:
-                exc = _classify_provider_http_error("Gemini", model, resp.status_code, resp.text[:300])
+                exc = _classify_provider_http_error("Gemini", model, resp.status_code, resp.text[:300], _parse_retry_after(resp.headers.get("Retry-After")))
                 if exc.kind == "auth":
                     _disable_provider_temporarily("gemini")
                 raise exc
@@ -388,11 +552,11 @@ def call_gemini_image(
                 timeout=REQUEST_TIMEOUT_SECS + 30  # görsel üretimi daha yavaş
             )
             if not res.ok:
-                exc = _classify_provider_http_error("Gemini-Görsel", model, res.status_code, res.text)
+                exc = _classify_provider_http_error("Gemini-Görsel", model, res.status_code, res.text, _parse_retry_after(res.headers.get("Retry-After")))
                 if exc.kind == "auth":
                     _disable_provider_temporarily("gemini")
                 if exc.kind == "transient" and attempt < BACKOFF_MAX_RETRIES:
-                    _sleep_backoff(attempt)
+                    _sleep_for_error(exc, attempt)
                     continue
                 raise exc
 
@@ -455,13 +619,13 @@ def call_groq(
         try:
             res = requests.post(GROQ_URL, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECS)
             if not res.ok:
-                err_exc = _classify_provider_http_error("Groq", model, res.status_code, res.text)
+                err_exc = _classify_provider_http_error("Groq", model, res.status_code, res.text, _parse_retry_after(res.headers.get("Retry-After")))
                 if err_exc.kind == "auth":
                     _disable_provider_temporarily("groq")
                 last_exc = err_exc
                 if err_exc.kind == "transient" and attempt < BACKOFF_MAX_RETRIES:
                     logger.warning(f"Groq ({model}) geçici hata, {attempt + 1}. deneme başarısız: {err_exc}")
-                    _sleep_backoff(attempt)
+                    _sleep_for_error(err_exc, attempt)
                     continue
                 raise err_exc
 
@@ -512,7 +676,7 @@ def stream_groq(
             timeout=STREAM_TIMEOUT_SECS
         ) as resp:
             if not resp.ok:
-                exc = _classify_provider_http_error("Groq", model, resp.status_code, resp.text[:300])
+                exc = _classify_provider_http_error("Groq", model, resp.status_code, resp.text[:300], _parse_retry_after(resp.headers.get("Retry-After")))
                 if exc.kind == "auth":
                     _disable_provider_temporarily("groq")
                 raise exc
@@ -590,7 +754,7 @@ def call_github_models(
                     spec["url"], json=spec["payload"], headers=spec["headers"], timeout=REQUEST_TIMEOUT_SECS
                 )
                 if not res.ok:
-                    err_exc = _classify_provider_http_error("GitHub Models", spec["payload"]["model"], res.status_code, res.text)
+                    err_exc = _classify_provider_http_error("GitHub Models", spec["payload"]["model"], res.status_code, res.text, _parse_retry_after(res.headers.get("Retry-After")))
                     if err_exc.kind == "auth":
                         _disable_provider_temporarily("github")
                         raise err_exc
@@ -600,7 +764,7 @@ def call_github_models(
                         break
                     last_exc = err_exc
                     if err_exc.kind == "transient" and attempt < BACKOFF_MAX_RETRIES:
-                        _sleep_backoff(attempt)
+                        _sleep_for_error(err_exc, attempt)
                         continue
                     raise err_exc
 
@@ -657,7 +821,7 @@ def stream_github_models(
             timeout=STREAM_TIMEOUT_SECS
         ) as resp:
             if not resp.ok:
-                exc = _classify_provider_http_error("GitHub Models", model_id, resp.status_code, resp.text[:300])
+                exc = _classify_provider_http_error("GitHub Models", model_id, resp.status_code, resp.text[:300], _parse_retry_after(resp.headers.get("Retry-After")))
                 if exc.kind == "auth":
                     _disable_provider_temporarily("github")
                 raise exc
@@ -759,6 +923,64 @@ def _credentials_exist(provider: str) -> bool:
     return False
 
 
+def _clear_cooldowns(provider: str, model: str) -> None:
+    """Başarılı çağrı sonrası sağlayıcı/model soğumasını temizler."""
+    with _COOLDOWN_LOCK:
+        _PROVIDER_COOLDOWN.pop(provider, None)
+        _MODEL_COOLDOWN.pop(f"{provider}:{model}", None)
+
+
+def _candidate_skip_reason(
+    provider: str,
+    model: str,
+    using_custom_key: bool,
+) -> Optional[str]:
+    """Adayın bu turda atlanması gerekiyorsa Türkçe gerekçe döner.
+
+    Özel anahtar kullanan adaylar sağlayıcı soğumasından etkilenmez; çünkü
+    soğuma paylaşılan anahtarın kotası/hatası için uygulanır.
+    """
+    if using_custom_key:
+        return None
+    if _is_provider_auth_disabled(provider):
+        return "sağlayıcı son yetki hatası nedeniyle geçici olarak kapalı"
+    provider_remaining = _provider_cooldown_remaining(provider)
+    if provider_remaining > 0:
+        return f"sağlayıcı {provider_remaining:.0f} sn boyunca soğumada"
+    model_remaining = _model_cooldown_remaining(provider, model)
+    if model_remaining > 0:
+        return f"model {model_remaining:.0f} sn boyunca soğumada"
+    return None
+
+
+def _register_error_cooldown(
+    provider: str,
+    model: str,
+    exc: ProviderError,
+    using_custom_key: bool,
+) -> None:
+    """Hata sınıfına göre sağlayıcı/model devre kesici durumunu günceller."""
+    retry_after = getattr(exc, "retry_after", None)
+    if exc.kind == "model_gone":
+        # Model kimliği bu hesapta yok: uzun süre tekrar denemeyelim.
+        _set_model_cooldown(provider, model, MODEL_GONE_COOLDOWN, str(exc))
+        return
+    if using_custom_key:
+        # Özel anahtarın hatası paylaşılan sağlayıcıyı kilitlememeli.
+        return
+    if exc.kind == "auth":
+        _disable_provider_temporarily(provider)
+        _set_provider_cooldown(provider, _AUTH_DISABLED_TTL, str(exc))
+        return
+    if exc.kind == "transient":
+        seconds = retry_after if retry_after is not None else (
+            DEFAULT_RATE_LIMIT_COOLDOWN if exc.status == 429 else DEFAULT_UNAVAILABLE_COOLDOWN
+        )
+        _set_provider_cooldown(provider, seconds, str(exc))
+        if exc.status == 429:
+            _set_model_cooldown(provider, model, seconds, str(exc))
+
+
 def _invoke_candidate(
     cand: Dict[str, str],
     messages: List[Dict[str, str]],
@@ -800,63 +1022,69 @@ def execute_chat_completion(
       - 5xx / ağ → üstel bekleyip tekrar dene, sonra sıradakine geç
     Hata sınıfları Türkçe anlaşılır mesajlar üretir (ProviderError taksonomisi).
     """
-    keys = {"gemini": custom_gemini_key, "groq": custom_groq_key, "github": custom_github_token}
+    keys = {
+        "gemini": (custom_gemini_key or "").strip() or None,
+        "groq": (custom_groq_key or "").strip() or None,
+        "github": (custom_github_token or "").strip() or None,
+    }
 
-    # 1) Kullanıcı özel anahtar girdiyse önce özel anahtar önceliği verilir
-    if custom_gemini_key and custom_gemini_key.strip():
+    # 1) Kullanıcı özel Gemini anahtarı girdiyse önce o denenir
+    if keys["gemini"]:
         try:
             res = call_gemini(
                 messages, model=GEMINI_MODEL_HIGH, temperature=temperature,
-                max_tokens=max_tokens, custom_api_key=custom_gemini_key
+                max_tokens=max_tokens, custom_api_key=keys["gemini"]
             )
-            return res, f"{GEMINI_MODEL_HIGH} (Özel Anahtar)"
+            return res, f"Google {GEMINI_MODEL_HIGH} (Özel Anahtar)"
         except ProviderError as exc:
             logger.warning(f"Özel Gemini anahtar denemesi başarısız (kaskada geçiliyor): {exc}")
 
     candidates = select_model_candidates(subscription_tier, custom_model_tier)
     last_error: Optional[ProviderError] = None
-    configured_count = 0
+    configured_providers = set()
+    skipped_for_cooldown: List[str] = []
 
     for cand in candidates:
         provider = cand["provider"]
         model = cand["model"]
 
         # Yapılandırılmamış sağlayıcıları erken ele (anahtar yoksa deneme bile yapma)
-        has_custom = bool(keys.get(provider))
-        if not has_custom and not _credentials_exist(provider):
+        using_custom_key = bool(keys.get(provider))
+        if not using_custom_key and not _credentials_exist(provider):
             continue
-        configured_count += 1
+        configured_providers.add(provider)
 
-        # Yetki hatasıyla kapatılmış sağlayıcıyı bu turda atla (özel anahtarlı denemeler yine denenir)
-        if not has_custom and _is_provider_auth_disabled(provider):
-            logger.info(f"{provider} geçici olarak kapalı (son yetki hatası) — atlanıyor.")
+        skip_reason = _candidate_skip_reason(provider, model, using_custom_key)
+        if skip_reason:
+            skipped_for_cooldown.append(f"{provider}/{model}: {skip_reason}")
+            logger.info(f"Aday atlandı ({provider}/{model}): {skip_reason}")
             continue
 
         try:
             text = _invoke_candidate(cand, messages, temperature, max_tokens, keys)
+            _clear_cooldowns(provider, model)
             return text, f"{'Google' if provider == 'gemini' else provider.capitalize()} {model}"
         except ContentSafetyProviderError as exc:
             # İçerik filtreleri sağlayıcıya özgüdür — sıradaki modelle denenebilir
             last_error = exc
             logger.warning(f"İçerik filtresi ({provider}/{model}), kaskad sıradakine geçiyor: {exc}")
             continue
-        except ProviderModelUnavailableError as exc:
-            last_error = exc
-            logger.warning(f"Model bulunamadı ({provider}/{model}) → kaskad sıradakine geçiyor: {exc}")
-            continue
-        except ProviderAuthError as exc:
-            last_error = exc
-            logger.warning(f"Yetki hatası ({provider}/{model}) → sıradakine geçiliyor: {exc}")
-            continue
         except ProviderError as exc:
             last_error = exc
+            _register_error_cooldown(provider, model, exc, using_custom_key)
             logger.warning(f"{provider} ({model}) başarısız oldu, kaskad sıradakine geçiyor: {exc}")
             continue
 
-    if configured_count == 0:
+    if not configured_providers:
         raise ProviderConfigurationError(
             "Hiçbir yapay zeka sağlayıcı anahtarı yapılandırılmamış. "
             "Lütfen .env dosyasında GEMINI_API_KEY, GROQ_API_KEY veya GITHUB_TOKEN değerlerinden en az birini tanımlayın."
+        )
+
+    if skipped_for_cooldown and not last_error:
+        raise ProviderUnavailableError(
+            "Tüm yapılandırılmış sağlayıcılar geçici olarak soğumada. Lütfen kısa bir süre sonra "
+            f"tekrar deneyin. ({'; '.join(skipped_for_cooldown[:3])})"
         )
 
     raise ProviderUnavailableError(
@@ -878,31 +1106,98 @@ def stream_chat_completion(
     Kaskad destekli canlı akış. İlk başarılı sağlayıcı akışı devralır.
     Dönen değer: (metin_parçaları_jeneratörü, kullanılan_model_etiketi)
     """
-    keys = {"gemini": custom_gemini_key, "groq": custom_groq_key, "github": custom_github_token}
+    keys = {
+        "gemini": (custom_gemini_key or "").strip() or None,
+        "groq": (custom_groq_key or "").strip() or None,
+        "github": (custom_github_token or "").strip() or None,
+    }
     candidates = select_model_candidates(subscription_tier, custom_model_tier)
     last_error: Optional[ProviderError] = None
+
+    def _open_candidate(provider: str, model: str) -> Generator[str, None, None]:
+        """Akışı açar ve İLK parçayı bekler.
+
+        Sağlayıcı hataları çoğu zaman jeneratörün ilk `next()` çağrısında ortaya
+        çıkar. Bu yüzden fallback'in gerçekten çalışması için akış burada
+        hazırlanır; başarılı ilk parça zincirleme jeneratöre geri verilir.
+        """
+        if provider == "gemini":
+            gen = stream_gemini(
+                messages, model=model, temperature=temperature, max_tokens=max_tokens,
+                custom_api_key=keys.get("gemini"),
+            )
+        elif provider == "groq":
+            gen = stream_groq(
+                messages, model=model, temperature=temperature, max_tokens=max_tokens,
+                custom_api_key=keys.get("groq"),
+            )
+        else:
+            gen = stream_github_models(
+                messages, model=model, temperature=temperature, max_tokens=max_tokens,
+                custom_token=keys.get("github"),
+            )
+
+        try:
+            first_chunk = next(gen)
+        except StopIteration as exc:
+            raise ProviderUnavailableError(
+                f"{provider} ({model}) boş bir akış döndürdü.", provider=provider, model=model
+            ) from exc
+
+        def _chained() -> Generator[str, None, None]:
+            yield first_chunk
+            yield from gen
+
+        return _chained()
+
+    # 1) Özel Gemini anahtarı önceliği
+    if keys["gemini"]:
+        try:
+            gen = _open_candidate("gemini", GEMINI_MODEL_HIGH)
+            return gen, f"Google {GEMINI_MODEL_HIGH} (Özel Anahtar)"
+        except ProviderError as exc:
+            last_error = exc
+            logger.warning(f"Özel Gemini anahtar akışı başarısız (kaskada geçiliyor): {exc}")
+
+    configured_providers = set()
+    skipped_for_cooldown: List[str] = []
 
     for cand in candidates:
         provider = cand["provider"]
         model = cand["model"]
 
-        if not keys.get(provider) and not _credentials_exist(provider):
+        using_custom_key = bool(keys.get(provider))
+        if not using_custom_key and not _credentials_exist(provider):
+            continue
+        configured_providers.add(provider)
+
+        skip_reason = _candidate_skip_reason(provider, model, using_custom_key)
+        if skip_reason:
+            skipped_for_cooldown.append(f"{provider}/{model}: {skip_reason}")
+            logger.info(f"Canlı akış adayı atlandı ({provider}/{model}): {skip_reason}")
             continue
 
         try:
-            if provider == "gemini":
-                gen = stream_gemini(messages, model=model, temperature=temperature, max_tokens=max_tokens, custom_api_key=keys.get("gemini"))
-            elif provider == "groq":
-                gen = stream_groq(messages, model=model, temperature=temperature, max_tokens=max_tokens, custom_api_key=keys.get("groq"))
-            else:
-                gen = stream_github_models(messages, model=model, temperature=temperature, max_tokens=max_tokens, custom_token=keys.get("github"))
-
+            gen = _open_candidate(provider, model)
+            _clear_cooldowns(provider, model)
             label = f"{'Google' if provider == 'gemini' else provider.capitalize()} {model}"
             return gen, label
         except ProviderError as exc:
             last_error = exc
+            _register_error_cooldown(provider, model, exc, using_custom_key)
             logger.warning(f"Canlı akış adayı başarısız ({provider}/{model}) → sıradakine geçiliyor: {exc}")
             continue
+
+    if not configured_providers:
+        raise ProviderConfigurationError(
+            "Canlı akış için yapılandırılmış sağlayıcı bulunamadı. Lütfen .env dosyasındaki API anahtarlarını kontrol edin."
+        )
+
+    if skipped_for_cooldown and not last_error:
+        raise ProviderUnavailableError(
+            "Tüm yapılandırılmış sağlayıcılar geçici olarak soğumada. Lütfen kısa bir süre sonra "
+            f"tekrar deneyin. ({'; '.join(skipped_for_cooldown[:3])})"
+        )
 
     if last_error:
         raise last_error
@@ -921,4 +1216,35 @@ def list_configured_providers() -> Dict[str, bool]:
         "gemini": bool(GEMINI_API_KEY),
         "groq": bool(GROQ_API_KEY),
         "github": bool(GITHUB_TOKEN)
+    }
+
+
+def list_provider_status() -> Dict[str, Any]:
+    """Sırları açığa çıkarmadan sağlayıcı/model sağlık durumunu raporlar."""
+    providers: List[Dict[str, Any]] = []
+    for provider in ("gemini", "groq", "github"):
+        models = [
+            {"model": model, **caps}
+            for model, caps in MODEL_CAPABILITIES.items()
+            if caps.get("provider") == provider
+        ]
+        auth_disabled = _is_provider_auth_disabled(provider)
+        cooldown = _provider_cooldown_remaining(provider)
+        providers.append({
+            "provider": provider,
+            "configured": _credentials_exist(provider),
+            "available": _credentials_exist(provider) and not auth_disabled and cooldown <= 0,
+            "auth_disabled": auth_disabled,
+            "cooldown_seconds": round(cooldown, 1),
+            "models": models,
+        })
+
+    return {
+        "providers": providers,
+        "tier_cascades": TIER_CASCADES,
+        "default_rate_limit_cooldown_seconds": DEFAULT_RATE_LIMIT_COOLDOWN,
+        "note": (
+            "Anahtarlar hiçbir zaman istemciye gönderilmez. 'available' alanı yalnızca yerel "
+            "devre kesici durumunu yansıtır; canlı sağlayıcı doğrulaması değildir."
+        ),
     }

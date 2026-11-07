@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌟 Lumina AI Engine v2.0
+# 🌟 Lumina AI Engine v3.2
 ### Duygusal, Zeki ve Çoklu Ajan Destekli Yeni Nesil Yapay Zekâ Asistanı
 
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -26,6 +26,27 @@
 **Lumina AI**, klasik ve soğuk yapay zekâ kalıplarını yıkarak gerçek bir insani sıcaklık, üstün analitik akıl yürütme ve çoklu ajan işbirliği sunan eksiksiz bir yapay zekâ ekosistemidir.
 
 Tasarımı **her ekrana sığacak (edge-to-edge, sıfır boş alan)**, akıcı, modern ve tüm cihazlara (mobil, tablet, masaüstü, ultra-geniş ekran) kusursuz uyum sağlayacak şekilde dizayn edilmiştir.
+
+---
+
+## 🆕 2026 Güncellemesi — Smart UI, Dosya Zekâsı ve Dayanıklı Router
+
+- **Smart UI:** 12 güvenli bileşen (hesap makinesi, görev listesi, bütçe, takvim, birim çevirici, yol haritası, ders programı, karşılaştırma, form, kontrol listesi, ilerleme takibi, veri tablosu). AI yalnızca katı şemalı JSON üretir; HTML/JS çalıştırılmaz.
+- **Evrensel dosya algılama:** Uzantı + MIME + sihirli bayt + iç yapı + içerik sezgisi. PDF, DOCX, XLSX, PPTX, ODT/ODS/ODP, EPUB, görsel, ses, video, kod ve arşiv desteği. Zip bomb, path traversal, makro ve çalıştırılabilir dosya koruması.
+- **AI Router:** Gemini + Groq + GitHub Models, kademeli fallback, `Retry-After`, sağlayıcı/model devre kesici ve model yetenek kaydı.
+- **Güvenlik:** Sıkı CORS, güvenlik başlıkları, XSS temizleyici, geçersiz token reddi, kullanıcı izolasyonu.
+- **Yeni giriş deneyimi (v3.2):** İlk ziyarette Misafir, Google ve E-posta seçenekleri sunan yenilenen giriş/kayıt ekranı; kullanıcı dostu Türkçe hata mesajları; sadeleştirilmiş sidebar. "Ajan Modları" bölümü ve "Şifremi Unuttum" bağlantısı kaldırıldı; 6 hızlı başlangıç kartı eklendi.
+- **Test:** `103 passed` (pytest). Ayrıca gerçek Node.js sözdizimi kontrolü, canlı tarayıcıda 12/12 Smart UI DOM render'ı, canlı dosya yükleme/ret testleri, Firebase hesap oluşturma/giriş/silme, ID token ile backend uç noktaları ve yeni giriş/kayıt arayüzü etkileşimleri doğrulandı. Ayrıntılar: [Test Kılavuzu](docs/TESTING.md).
+
+### Teknik Dokümantasyon
+
+- [Mimari Genel Bakış](docs/ARCHITECTURE.md)
+- [Smart UI](docs/SMART_UI.md)
+- [Dosya Algılama ve İşleme](docs/FILE_PROCESSING.md)
+- [AI Sağlayıcıları ve Router](docs/AI_PROVIDERS.md)
+- [Güvenlik Modeli](docs/SECURITY.md)
+- [Test Kılavuzu](docs/TESTING.md)
+- [Final Rapor](FINAL_RAPOR.md)
 
 ---
 
@@ -136,16 +157,29 @@ Bu repo **GitHub Pages** üzerinde statik bir web uygulaması olarak doğrudan y
 ## 📁 Proje Dosya Yapısı
 
 ```
-├── .env.example          # Çevre değişkenleri şablonu
-├── .gitignore            # Gizli anahtarları koruyan gitignore
-├── baslat.bat            # Tek tıkla backend ve tarayıcı başlatıcı
-├── index.html            # Edge-to-edge tam ekran responsive arayüz
-├── app.js                # Frontend motoru (Markdown, KaTeX, Çoklu Sohbet, Groq Direct)
-├── sw.js                 # Bildirimler için Service Worker
-├── main.py               # FastAPI backend & Multi-Agent orkestrasyonu
-├── requirements.txt      # Python bağımlılıkları
-├── GUVENLIK_VE_KURULUM.md# Detaylı güvenlik ve kurulum kılavuzu
-└── README.md             # GitHub proje tanıtım dokümanı
+├── .env.example             # Çevre değişkenleri şablonu
+├── .gitignore               # Gizli anahtarları koruyan gitignore
+├── baslat.bat               # Tek tıkla backend ve tarayıcı başlatıcı
+├── index.html               # Edge-to-edge tam ekran responsive arayüz
+├── app.js                   # Frontend motoru (Markdown, KaTeX, Smart UI, güvenli DOM)
+├── sw.js                    # Bildirimler için Service Worker
+├── main.py                  # FastAPI backend & endpoint'ler
+├── models_provider.py       # AI Router, fallback, cooldown, yetenek kaydı
+├── smart_ui.py              # Katı Smart UI şemaları ve doğrulama
+├── storage.py               # Atomik yerel depo + opsiyonel Firestore
+├── subscriptions.py         # Abonelik paketleri ve kota
+├── file_processing/         # Dosya algılama, güvenlik ve adaptörler
+│   ├── detector.py
+│   ├── security.py
+│   ├── adapters.py
+│   └── pipeline.py
+├── tests/                   # pytest paketi (103 test)
+├── docs/                    # Türkçe teknik dokümantasyon
+├── requirements.txt         # Çalışma zamanı bağımlılıkları
+├── requirements-dev.txt     # Test bağımlılıkları
+├── FINAL_RAPOR.md           # 18 maddelik final raporu
+├── GUVENLIK_VE_KURULUM.md   # Detaylı güvenlik ve kurulum kılavuzu
+└── README.md                # GitHub proje tanıtım dokümanı
 ```
 
 ---

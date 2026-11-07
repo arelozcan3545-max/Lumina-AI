@@ -1,4 +1,7 @@
-# Lumina AI Engine v2.0 — Kullanım ve Geliştirici Kılavuzu
+# Lumina AI Engine v2.0 — Kullanım ve Geliştirici Kılavuzu (Tarihsel)
+
+> ⚠️ **Bu belge tarihseldir.** Özellikle model kimlikleri ve Smart UI bileşen sayısı güncel değildir.
+> Güncel teknik bilgi için [docs/](docs/) dizinini ve [FINAL_RAPOR.md](FINAL_RAPOR.md) dosyasını kullanın.
 
 Lumina AI; derin empati yeteneğine, adım adım matematik ve mantık muhakemesine, çoklu ajan (Multi-Agent) yazılım hattına, yapay zeka destekli kusursuz görsel stüdyosuna ve sıfır-hata dayanıklılığına sahip yeni nesil bir yapay zeka sistemidir.
 

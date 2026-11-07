@@ -90,6 +90,12 @@ let googleProvider = null;
 let currentUser = null;
 let isGuestMode = true;
 
+// İlk ziyaret / giriş kapısı durumu
+const WELCOME_SEEN_KEY = "lumina_welcome_seen";
+let authGateHandled = false;
+let isAuthGate = false;
+let emailAuthMode = "login";
+
 let currentAgentMode = "general";
 let selectedImageStyle = "photorealistic";
 let selectedImageRatio = "1:1";
@@ -128,12 +134,14 @@ document.addEventListener("DOMContentLoaded", () => {
     loadChatSessions();
     setupSpeechRecognition();
     initBackgroundFeatures();   // tercihler, bildirimler, arka plan işleri, kendiliğinden yazma
+    loadFileFormatCatalog();    // desteklenen dosya türleri ve gerçek yükleme sınırı
 
     if (isFirebaseActive && auth) {
         auth.onAuthStateChanged((user) => {
             if (user) {
                 currentUser = user;
                 isGuestMode = false;
+                markWelcomeSeen();
                 updateUserDisplay(user.displayName || user.email);
                 fetchAndDisplayQuota();
                 fetchSubscriptionDetails();
@@ -141,22 +149,73 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!user.emailVerified && user.email) {
                     showToast("E-posta Doğrulaması", "Hesabını güvenceye almak için e-postani doğrula (Ayarlar → yeniden gönder).");
                 }
+                maybeShowAuthGate(true);
             } else {
                 currentUser = null;
                 isGuestMode = true;
                 updateUserDisplay("Misafir Modu");
                 fetchAndDisplayQuota();
+                maybeShowAuthGate(false);
             }
         });
     } else {
         updateUserDisplay("Misafir Modu");
         fetchAndDisplayQuota();
+        maybeShowAuthGate(false);
     }
 });
 
+function markWelcomeSeen() {
+    try {
+        localStorage.setItem(WELCOME_SEEN_KEY, "1");
+    } catch (e) { /* depolama kapalıysa sessizce geç */ }
+}
+
+// İlk tarayıcı ziyaretinde giriş/kayıt seçeneklerini göster.
+function maybeShowAuthGate(hasUser) {
+    if (authGateHandled) return;
+    authGateHandled = true;
+
+    if (hasUser) {
+        markWelcomeSeen();
+        return;
+    }
+
+    let seen = false;
+    try {
+        seen = localStorage.getItem(WELCOME_SEEN_KEY) === "1";
+    } catch (e) { /* depolama kapalıysa kapı yine gösterilir */ }
+    if (seen) return;
+
+    // İlk boyama tamamlandıktan sonra yumuşak bir geçişle aç.
+    setTimeout(() => openAuthModal({ gate: true }), 420);
+}
+
 function updateUserDisplay(name) {
     const label = document.getElementById("sidebar-user-name");
-    if (label) label.innerText = name;
+    const sub = document.getElementById("sidebar-user-sub");
+    const avatar = document.getElementById("sidebar-avatar");
+    const guestActions = document.getElementById("account-guest-actions");
+    const logoutBtn = document.getElementById("account-logout-btn");
+
+    const signedIn = Boolean(currentUser);
+    const displayName = signedIn
+        ? (currentUser.displayName || currentUser.email || name || "Kullanıcı")
+        : (name || "Misafir Modu");
+
+    if (label) label.innerText = displayName;
+    if (sub) {
+        sub.innerText = signedIn
+            ? (currentUser.email || "Giriş yapıldı")
+            : "Giriş yap veya hesap oluştur";
+    }
+    if (avatar) {
+        avatar.innerText = signedIn
+            ? displayName.trim().charAt(0).toLocaleUpperCase("tr-TR")
+            : "?";
+    }
+    if (guestActions) guestActions.hidden = signedIn;
+    if (logoutBtn) logoutBtn.hidden = !signedIn;
 }
 
 // ============================================================
@@ -648,7 +707,7 @@ function renderCurrentSession() {
             <div class="starter-hero" id="starter-hero">
                 <div class="starter-hero-icon">L</div>
                 <h2>Lumina AI ile Ne Yapmak İstersin?</h2>
-                <p>Duygusal, zeki ve çoklu ajan destekli yapay zeka. Matematik problemlerini adım adım çözer, projelerinizi baştan sona kodlar ve foto-gerçekçi görseller üretir.</p>
+                <p>Evrensel dosya analizi, adım adım matematik, çoklu ajan yazılım ekibi ve foto-gerçekçi görsel üretimi tek bir zeki asistanada.</p>
 
                 <div class="starter-grid">
                     <div class="starter-chip" onclick="quickAsk('Zor bir matematik problemini adım adım açıkla: 3x^2 - 12x + 9 = 0')">
@@ -659,6 +718,16 @@ function renderCurrentSession() {
                     <div class="starter-chip" onclick="selectAgentMode('software'); quickAsk('/proje React ve FastAPI ile tam donanımlı bir Görev Takip uygulaması mimarisi ve çalışan kodları')">
                         <div class="starter-chip-title">💻 Çoklu Ajan Yazılım</div>
                         <div class="starter-chip-desc">Mimar, Geliştirici ve QA 3'lü ajan ekibiyle baştan sona kodlayın.</div>
+                    </div>
+
+                    <div class="starter-chip" onclick="triggerDocUpload()">
+                        <div class="starter-chip-title">📄 Belge & Dosya Analizi</div>
+                        <div class="starter-chip-desc">PDF, kod, tablo, arşiv ve medya dosyalarını güvenle analiz ettirin.</div>
+                    </div>
+
+                    <div class="starter-chip" onclick="selectAgentMode('research'); quickAsk('Güncel bir konuyu derinlemesine araştır ve güvenilir kaynaklarla özetle: yapay zeka ajanları 2026')">
+                        <div class="starter-chip-title">🌐 Derin Araştırma</div>
+                        <div class="starter-chip-desc">Güncel bilgiyi web ajanıyla tarayın, kaynaklı ve düzenli özet alın.</div>
                     </div>
 
                     <div class="starter-chip" onclick="openImageStudioModal()">
@@ -774,14 +843,63 @@ function renderUserMessageElement(text, save = true) {
     }
 }
 
+// HTML güvenliği: marked çıktısı asla olduğu gibi DOM'a verilmez.
+// Tehlikeli etiketler, olay işleyicileri ve tehlikeli URL şemaları temizlenir.
+const _BLOCKED_HTML_TAGS = new Set([
+    "script", "style", "iframe", "frame", "frameset", "object", "embed", "applet",
+    "form", "input", "textarea", "select", "option", "button", "link", "meta",
+    "base", "svg", "math", "template", "noscript", "video", "audio", "source"
+]);
+
+function isSafeURL(rawUrl) {
+    const value = String(rawUrl ?? "").trim().replace(/[\u0000-\u001f\u007f]/g, "");
+    if (!value) return false;
+    if (value.startsWith("//")) return false; // protokol-göreli dış kaynak
+    const compact = value.replace(/\s+/g, "").toLowerCase();
+    if (/^(javascript|vbscript|data|file|blob):/.test(compact)) return false;
+    return /^(https?:|mailto:|tel:)/i.test(value) || /^(\/|#|\.{1,2}\/|[^:]+$)/.test(value);
+}
+
+function sanitizeHTML(html) {
+    const doc = new DOMParser().parseFromString(`<div>${String(html ?? "")}</div>`, "text/html");
+    const root = doc.body.firstElementChild;
+    if (!root) return "";
+    root.querySelectorAll("*").forEach((el) => {
+        const tag = el.tagName.toLowerCase();
+        if (_BLOCKED_HTML_TAGS.has(tag)) {
+            el.remove();
+            return;
+        }
+        Array.from(el.attributes).forEach((attr) => {
+            const name = attr.name.toLowerCase();
+            const value = String(attr.value ?? "");
+            if (name.startsWith("on") || name === "style" || name === "srcset" || name === "formaction") {
+                el.removeAttribute(attr.name);
+                return;
+            }
+            if (name === "href" || name === "src" || name === "xlink:href") {
+                if (!isSafeURL(value)) el.removeAttribute(attr.name);
+            }
+        });
+        if (el.tagName.toLowerCase() === "a") {
+            el.setAttribute("rel", "noopener noreferrer");
+            el.setAttribute("target", "_blank");
+        }
+    });
+    return root.innerHTML;
+}
+
 function formatMarkdownAndCode(text) {
     let html = "";
     if (typeof marked !== "undefined") {
         marked.setOptions({ breaks: true, gfm: true });
-        html = marked.parse(text);
+        html = marked.parse(String(text ?? ""));
     } else {
         html = escapeHTML(text).replace(/\n/g, "<br>");
     }
+
+    // Yalnızca temizlenmiş HTML DOM'a aktarılır.
+    html = sanitizeHTML(html);
 
     // Wrap code blocks with header and copy button
     const parser = new DOMParser();
@@ -790,16 +908,23 @@ function formatMarkdownAndCode(text) {
 
     preBlocks.forEach((pre) => {
         const code = pre.querySelector("code");
-        const lang = (code && code.className) ? code.className.replace("language-", "") : "kod";
+        const classMatch = code ? /language-([\w+#.-]+)/i.exec(code.className || "") : null;
+        const lang = classMatch ? classMatch[1] : "kod";
 
         const container = doc.createElement("div");
         container.className = "code-container";
-        container.innerHTML = `
-            <div class="code-header">
-                <span>${lang.toUpperCase()}</span>
-                <button class="copy-btn" onclick="copyCode(this)">📋 Kopyala</button>
-            </div>
-        `;
+        const header = doc.createElement("div");
+        header.className = "code-header";
+        const langSpan = doc.createElement("span");
+        langSpan.textContent = lang.toUpperCase();
+        const copyBtn = doc.createElement("button");
+        copyBtn.className = "copy-btn";
+        copyBtn.type = "button";
+        copyBtn.textContent = "📋 Kopyala";
+        copyBtn.addEventListener("click", function () { copyCode(this); });
+        header.appendChild(langSpan);
+        header.appendChild(copyBtn);
+        container.appendChild(header);
         pre.parentNode.replaceChild(container, pre);
         container.appendChild(pre);
     });
@@ -1515,17 +1640,108 @@ function saveSettings() {
     showToast("Ayarlar kaydedildi", "Kişilik, ses ve tema ayarlarınız uygulandı.");
 }
 
-function openAuthModal() {
+// ============================================================
+// GİRİŞ / KAYIT AKIŞI
+// ============================================================
+
+function openAuthModal(options = {}) {
     const modal = document.getElementById("auth-modal");
-    if (modal) modal.style.display = "flex";
+    if (!modal) return;
+
+    isAuthGate = Boolean(options.gate);
+    showAuthChoice();
+    modal.style.display = "flex";
+
+    if (options.provider === "google") {
+        handleGoogleLogin();
+    } else if (options.provider === "email") {
+        showEmailForm(options.mode === "register" ? "register" : "login");
+    }
 }
 
 function closeAuthModal() {
     const modal = document.getElementById("auth-modal");
     if (modal) modal.style.display = "none";
+    isAuthGate = false;
+    clearAuthError();
+}
+
+function dismissAuthGate() {
+    // İlk ziyaret kapısında kapatma, kullanıcıyı kilitlemek yerine misafir moduna geçirir.
+    if (isAuthGate) {
+        continueAsGuest();
+        return;
+    }
+    closeAuthModal();
+}
+
+function showAuthChoice() {
+    const choice = document.getElementById("auth-panel-choice");
+    const email = document.getElementById("auth-panel-email");
+    if (choice) choice.classList.add("active");
+    if (email) email.classList.remove("active");
+    clearAuthError();
+}
+
+function showEmailForm(mode) {
+    emailAuthMode = mode === "register" ? "register" : "login";
+    const choice = document.getElementById("auth-panel-choice");
+    const emailPanel = document.getElementById("auth-panel-email");
+    if (choice) choice.classList.remove("active");
+    if (emailPanel) emailPanel.classList.add("active");
+
+    const isRegister = emailAuthMode === "register";
+    const title = document.getElementById("auth-form-title");
+    const subtitle = document.getElementById("auth-form-subtitle");
+    const submit = document.getElementById("auth-submit-btn");
+    const switchText = document.getElementById("auth-switch-text");
+    const switchBtn = document.getElementById("auth-switch-btn");
+    const passInput = document.getElementById("auth-password");
+
+    if (title) title.innerText = isRegister ? "Yeni Hesap Oluştur" : "E-posta ile Giriş";
+    if (subtitle) subtitle.innerText = isRegister
+        ? "Birkaç saniyede hesabını oluştur ve sohbetlerini güvenceye al."
+        : "Hesabına giriş yaparak kaldığın yerden devam et.";
+    if (submit) submit.innerText = isRegister ? "Kayıt Ol" : "Giriş Yap";
+    if (switchText) switchText.innerText = isRegister ? "Zaten hesabın var mı?" : "Hesabın yok mu?";
+    if (switchBtn) switchBtn.innerText = isRegister ? "Giriş Yap" : "Kayıt Ol";
+    if (passInput) passInput.autocomplete = isRegister ? "new-password" : "current-password";
+
+    clearAuthError();
+    const emailInput = document.getElementById("auth-email");
+    if (emailInput) setTimeout(() => emailInput.focus(), 60);
+}
+
+function toggleEmailMode() {
+    showEmailForm(emailAuthMode === "register" ? "login" : "register");
+}
+
+function clearAuthError() {
+    const box = document.getElementById("auth-error");
+    if (!box) return;
+    box.innerText = "";
+    box.classList.remove("visible");
+}
+
+function setAuthError(message) {
+    const box = document.getElementById("auth-error");
+    if (!box) {
+        showToast("İşlem Başarısız", message, "error");
+        return;
+    }
+    box.innerText = message;
+    box.classList.add("visible");
+}
+
+function finishAuthSuccess(title, message) {
+    markWelcomeSeen();
+    closeAuthModal();
+    showToast(title, message);
+    fetchSubscriptionDetails();
 }
 
 function continueAsGuest() {
+    markWelcomeSeen();
     isGuestMode = true;
     currentUser = null;
     updateUserDisplay("Misafir Modu");
@@ -1545,6 +1761,11 @@ function translateAuthError(err) {
             return "Bu e-posta adresiyle kayıtlı bir hesap bulunamadı.";
         case "auth/wrong-password":
             return "Hatalı şifre girdiniz. Lütfen tekrar deneyin.";
+        case "auth/invalid-credential":
+        case "auth/invalid-login-credentials":
+            return "E-posta veya şifre hatalı. Lütfen kontrol edip tekrar deneyin.";
+        case "auth/missing-password":
+            return "Lütfen şifrenizi girin.";
         case "auth/email-already-in-use":
             return "Bu e-posta adresi zaten kullanımda. Giriş yapmayı deneyebilirsiniz.";
         case "auth/weak-password":
@@ -1553,6 +1774,10 @@ function translateAuthError(err) {
             return "Ağ bağlantısı kurulamadı. İnternet bağlantınızı kontrol edin.";
         case "auth/popup-closed-by-user":
             return "Google ile giriş penceresi kapatıldı.";
+        case "auth/popup-blocked":
+            return "Google giriş penceresi tarayıcı tarafından engellendi. Açılır pencerelere izin verin.";
+        case "auth/operation-not-allowed":
+            return "Bu giriş yöntemi şu anda etkin değil. Lütfen farklı bir yöntem deneyin.";
         case "auth/too-many-requests":
             return "Çok fazla başarısız deneme yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.";
         default:
@@ -1560,69 +1785,77 @@ function translateAuthError(err) {
     }
 }
 
+function readEmailForm() {
+    const emailInput = document.getElementById("auth-email");
+    const passInput = document.getElementById("auth-password");
+    return {
+        email: emailInput ? emailInput.value.trim() : "",
+        pass: passInput ? passInput.value : ""
+    };
+}
+
+async function submitEmailAuth() {
+    if (emailAuthMode === "register") {
+        await handleEmailRegister();
+    } else {
+        await handleEmailLogin();
+    }
+}
+
 async function handleEmailLogin() {
     if (!isFirebaseActive) { continueAsGuest(); return; }
-    const email = document.getElementById("auth-email").value.trim();
-    const pass = document.getElementById("auth-password").value;
+    const { email, pass } = readEmailForm();
     if (!email || !pass) {
-        showToast("Eksik Bilgi", "Lütfen e-posta ve şifrenizi girin.", "warning");
+        setAuthError("Lütfen e-posta ve şifrenizi girin.");
         return;
     }
+
+    const submit = document.getElementById("auth-submit-btn");
+    if (submit) submit.disabled = true;
+    clearAuthError();
     try {
         const cred = await auth.signInWithEmailAndPassword(email, pass);
-        closeAuthModal();
-        showToast("Giriş Başarılı", `Hoş geldiniz, ${cred.user.displayName || cred.user.email}!`);
-        fetchSubscriptionDetails();
+        finishAuthSuccess("Giriş Başarılı", `Hoş geldiniz, ${cred.user.displayName || cred.user.email}!`);
     } catch (e) {
-        showToast("Giriş Başarısız", translateAuthError(e), "error");
+        setAuthError(translateAuthError(e));
+    } finally {
+        if (submit) submit.disabled = false;
     }
 }
 
 async function handleEmailRegister() {
     if (!isFirebaseActive) { continueAsGuest(); return; }
-    const email = document.getElementById("auth-email").value.trim();
-    const pass = document.getElementById("auth-password").value;
+    const { email, pass } = readEmailForm();
     if (!email || !pass) {
-        showToast("Eksik Bilgi", "Lütfen e-posta ve şifrenizi girin.", "warning");
+        setAuthError("Lütfen e-posta ve şifrenizi girin.");
         return;
     }
+    if (pass.length < 6) {
+        setAuthError("Şifreniz en az 6 karakter olmalıdır.");
+        return;
+    }
+
+    const submit = document.getElementById("auth-submit-btn");
+    if (submit) submit.disabled = true;
+    clearAuthError();
     try {
-        const cred = await auth.createUserWithEmailAndPassword(email, pass);
-        closeAuthModal();
-        showToast("Kayıt Başarılı", "Hesabınız başarıyla oluşturuldu.");
-        fetchSubscriptionDetails();
+        await auth.createUserWithEmailAndPassword(email, pass);
+        finishAuthSuccess("Kayıt Başarılı", "Hesabınız başarıyla oluşturuldu.");
     } catch (e) {
-        showToast("Kayıt Başarısız", translateAuthError(e), "error");
+        setAuthError(translateAuthError(e));
+    } finally {
+        if (submit) submit.disabled = false;
     }
 }
 
 async function handleGoogleLogin() {
     if (!isFirebaseActive || !googleProvider) { continueAsGuest(); return; }
+    clearAuthError();
     try {
         const cred = await auth.signInWithPopup(googleProvider);
-        closeAuthModal();
-        showToast("Google Girişi", `Hoş geldiniz, ${cred.user.displayName || cred.user.email}!`);
-        fetchSubscriptionDetails();
+        finishAuthSuccess("Google Girişi", `Hoş geldiniz, ${cred.user.displayName || cred.user.email}!`);
     } catch (e) {
-        showToast("Google Giriş Hatası", translateAuthError(e), "error");
-    }
-}
-
-async function handlePasswordReset() {
-    if (!isFirebaseActive) {
-        showToast("Bilgi", "Firebase aktif değil. Şifre sıfırlama çevrimdışı modda kullanılamaz.");
-        return;
-    }
-    const email = document.getElementById("auth-email").value.trim();
-    if (!email) {
-        showToast("E-posta Gerekli", "Lütfen şifre sıfırlama bağlantısı göndermek için e-posta alanını doldurun.", "warning");
-        return;
-    }
-    try {
-        await auth.sendPasswordResetEmail(email);
-        showToast("Sıfırlama Bağlantısı Gönderildi", `${email} adresine şifre sıfırlama e-postası iletildi.`);
-    } catch (e) {
-        showToast("Sıfırlama Hatası", translateAuthError(e), "error");
+        setAuthError(translateAuthError(e));
     }
 }
 
@@ -3299,6 +3532,30 @@ async function removeFamilyMember(email) {
 
 let currentAttachedDoc = null;
 let isUploadingDoc = false;
+// Backend'den güncellenir; erişilemezse güvenli varsayılan kullanılır.
+let MAX_DOC_UPLOAD_MB = 25;
+
+async function loadFileFormatCatalog() {
+    try {
+        const res = await fetch(`${backendUrl}/files/formats`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const limit = Number(data.max_upload_mb);
+        if (limit > 0) MAX_DOC_UPLOAD_MB = limit;
+        const exts = [];
+        (Array.isArray(data.categories) ? data.categories : []).forEach(cat => {
+            (Array.isArray(cat.formats) ? cat.formats : []).forEach(fmt => {
+                (Array.isArray(fmt.extensions) ? fmt.extensions : []).forEach(ext => {
+                    if (ext) exts.push(`.${ext}`);
+                });
+            });
+        });
+        const input = document.getElementById("doc-upload-input");
+        if (input && exts.length) input.setAttribute("accept", exts.join(","));
+    } catch (e) {
+        // Çevrimdışı: varsayılan 25 MB sınırı ve geniş uzantı listesi geçerli.
+    }
+}
 
 function triggerDocUpload() {
     const input = document.getElementById("doc-upload-input");
@@ -3310,8 +3567,8 @@ async function handleDocUpload(event) {
     const file = fileEl && fileEl.files && fileEl.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-        showToast("Dosya Çok Büyük", "Belge en fazla 5MB olabilir.", null, 7000);
+    if (file.size > MAX_DOC_UPLOAD_MB * 1024 * 1024) {
+        showToast("Dosya Çok Büyük", `Belge en fazla ${MAX_DOC_UPLOAD_MB} MB olabilir.`, null, 7000);
         fileEl.value = "";
         return;
     }
@@ -3339,10 +3596,19 @@ async function handleDocUpload(event) {
             filename: data.filename || file.name,
             excerpt: data.excerpt || data.preview || "",
             characters: data.characters || 0,
-            filetype: data.filetype || "text"
+            filetype: data.filetype || "text",
+            categoryLabel: data.category_label || data.category || "Belge",
+            warnings: Array.isArray(data.warnings) ? data.warnings : [],
+            metadata: data.metadata && typeof data.metadata === "object" ? data.metadata : {}
         };
         renderAttachedDocPill(true);
-        showToast("Belge Eklendi", `${data.filename} • ${formatTRNumber(data.characters)} karakter. Sorunu yazıp gönderebilirsin.`);
+        showToast(
+            "Belge Eklendi",
+            `${data.filename} • ${currentAttachedDoc.categoryLabel} • ${formatTRNumber(data.characters)} karakter. Sorunu yazıp gönderebilirsin.`
+        );
+        if (currentAttachedDoc.warnings.length) {
+            showToast("Analiz Notu", currentAttachedDoc.warnings[0], null, 8000);
+        }
     } catch (e) {
         showToast("Bağlantı Hatası", "Belge analizi için backend sunucusuna ulaşılamadı.", null, 8000);
     } finally {
@@ -3362,7 +3628,8 @@ function renderAttachedDocPill(show) {
     if (!pill) return;
     if (show && currentAttachedDoc) {
         pill.style.display = "flex";
-        if (name) name.textContent = `📄 ${currentAttachedDoc.filename} (${formatTRNumber(currentAttachedDoc.characters)} karakter)`;
+        const label = currentAttachedDoc.categoryLabel ? ` • ${currentAttachedDoc.categoryLabel}` : "";
+        if (name) name.textContent = `📄 ${currentAttachedDoc.filename}${label} (${formatTRNumber(currentAttachedDoc.characters)} karakter)`;
     } else {
         pill.style.display = "none";
         if (name) name.textContent = "📄 Belge eklendi";
@@ -3472,22 +3739,28 @@ function safeCalcExpression(expr) {
     return Math.round(result * 1e6) / 1e6;
 }
 
+// Merkezi Smart UI kaydı: yalnızca burada tanımlı tipler render edilir.
+// Bilinmeyen tip sessizce yok sayılır; dinamik kod çalıştırılmaz.
+const SMART_UI_BUILDERS = {
+    calculator: buildSmartCalculator,
+    task_manager: buildSmartTaskManager,
+    budget_planner: buildSmartBudgetPlanner,
+    calendar: buildSmartCalendar,
+    unit_converter: buildSmartUnitConverter,
+    project_roadmap: buildSmartRoadmap,
+    study_planner: buildSmartStudyPlanner,
+    comparison_table: buildSmartComparisonTable,
+    interactive_form: buildSmartInteractiveForm,
+    checklist: buildSmartChecklist,
+    progress_tracker: buildSmartProgressTracker,
+    data_table: buildSmartDataTable
+};
+
 function renderSmartUI(block, container) {
     if (!block || !block.type || !container) return null;
     const type = String(block.type).toLowerCase();
-    const builders = {
-        calculator: buildSmartCalculator,
-        task_manager: buildSmartTaskManager,
-        budget_planner: buildSmartBudgetPlanner,
-        calendar: buildSmartCalendar,
-        unit_converter: buildSmartUnitConverter,
-        project_roadmap: buildSmartRoadmap,
-        study_planner: buildSmartStudyPlanner,
-        comparison_table: buildSmartComparisonTable,
-        interactive_form: buildSmartInteractiveForm
-    };
-    const builder = builders[type];
-    if (!builder) return null; // bilinmeyen / desteklenmeyen tip yoksayılır
+    if (!Object.prototype.hasOwnProperty.call(SMART_UI_BUILDERS, type)) return null;
+    const builder = SMART_UI_BUILDERS[type];
     const card = document.createElement("div");
     card.className = "smart-ui-card";
     card.setAttribute("role", "group");
@@ -3524,7 +3797,10 @@ const SMART_UI_TYPE_LABELS = {
     project_roadmap: "Proje Panosu",
     study_planner: "Ders Programı",
     comparison_table: "Karşılaştırma",
-    interactive_form: "İnteraktif Form"
+    interactive_form: "İnteraktif Form",
+    checklist: "Kontrol Listesi",
+    progress_tracker: "İlerleme Takibi",
+    data_table: "Veri Tablosu"
 };
 
 function setSmartContextPrompt(text) {
@@ -3674,15 +3950,23 @@ function buildSmartBudgetPlanner(block, card) {
 
     const summary = document.createElement("div");
     summary.className = "smart-budget-summary";
-    const mk = (label, value, color) => `
-        <div class="smart-budget-stat">
-            <div class="smart-budget-label">${label}</div>
-            <div class="smart-budget-val" style="${color ? `color:${color};` : ""}">${formatTRNumber(value)} ${currency}</div>
-        </div>`;
-    summary.innerHTML =
-        mk("Gelir", income, "#22c55e") +
-        mk("Gider", totalExp, "#ef4444") +
-        mk("Kalan", remaining, remaining >= 0 ? "#22c55e" : "#ef4444");
+    const mk = (label, value, color) => {
+        const stat = document.createElement("div");
+        stat.className = "smart-budget-stat";
+        const labelEl = document.createElement("div");
+        labelEl.className = "smart-budget-label";
+        labelEl.textContent = label;
+        const valEl = document.createElement("div");
+        valEl.className = "smart-budget-val";
+        if (color) valEl.style.color = color;
+        valEl.textContent = `${formatTRNumber(value)} ${currency}`;
+        stat.appendChild(labelEl);
+        stat.appendChild(valEl);
+        return stat;
+    };
+    summary.appendChild(mk("Gelir", income, "#22c55e"));
+    summary.appendChild(mk("Gider", totalExp, "#ef4444"));
+    summary.appendChild(mk("Kalan", remaining, remaining >= 0 ? "#22c55e" : "#ef4444"));
     const bar = document.createElement("div");
     bar.style.cssText = "height:6px;background:var(--bg-base);border-radius:4px;overflow:hidden;margin-bottom:12px;";
     bar.innerHTML = `<div style="height:100%;width:${Math.min(100, pct)}%;background:${pct > 90 ? "#ef4444" : pct > 70 ? "#f59e0b" : "#22c55e"};border-radius:4px;"></div>`;
@@ -3922,6 +4206,176 @@ function buildSmartInteractiveForm(block, card) {
     return card;
 }
 
+function buildSmartChecklist(block, card) {
+    const data = block.data || {};
+    const items = (Array.isArray(data.items) ? data.items : []).slice(0, 80).map(it => ({
+        text: String((it && it.text) || "").slice(0, 200),
+        done: !!(it && it.done)
+    }));
+
+    const progress = document.createElement("div");
+    progress.className = "smart-checklist-progress";
+    progress.setAttribute("role", "status");
+    progress.setAttribute("aria-live", "polite");
+
+    const list = document.createElement("div");
+    list.className = "smart-checklist";
+
+    const redraw = () => {
+        list.innerHTML = "";
+        items.forEach((item, idx) => {
+            const row = document.createElement("label");
+            row.className = `smart-checklist-item ${item.done ? "done" : ""}`;
+            const check = document.createElement("input");
+            check.type = "checkbox";
+            check.checked = item.done;
+            check.setAttribute("aria-label", `Tamamlandı: ${item.text || "Madde"}`);
+            check.addEventListener("change", () => {
+                items[idx].done = check.checked;
+                redraw();
+            });
+            const span = document.createElement("span");
+            span.textContent = item.text || "Madde";
+            row.appendChild(check);
+            row.appendChild(span);
+            list.appendChild(row);
+        });
+        if (!items.length) {
+            const empty = document.createElement("span");
+            empty.style.cssText = "font-size:12px;color:var(--text-muted);";
+            empty.textContent = "Liste boş.";
+            list.appendChild(empty);
+        }
+        const doneCount = items.filter(i => i.done).length;
+        progress.textContent = `${doneCount}/${items.length} tamamlandı`;
+    };
+    redraw();
+
+    const sendBtn = buildSendToChatBtn(() => {
+        const lines = items.map(i => `- [${i.done ? "x" : " "}] ${i.text}`);
+        return `Kontrol listemi gözden geçir ve eksikleri hatırlat:\n\n${lines.join("\n")}`;
+    });
+
+    card.appendChild(progress);
+    card.appendChild(list);
+    card.appendChild(buildActionBar(sendBtn));
+    return card;
+}
+
+function buildSmartProgressTracker(block, card) {
+    const data = block.data || {};
+    const goals = (Array.isArray(data.goals) ? data.goals : []).slice(0, 30).map(g => {
+        const target = Number(g && g.target);
+        const current = Number(g && g.current);
+        return {
+            label: String((g && g.label) || "Hedef").slice(0, 160),
+            current: Number.isFinite(current) ? Math.max(0, current) : 0,
+            target: Number.isFinite(target) && target > 0 ? target : 1,
+            unit: g && g.unit ? String(g.unit).slice(0, 24) : ""
+        };
+    });
+
+    const list = document.createElement("div");
+    list.className = "smart-progress-list";
+    goals.forEach(goal => {
+        const pct = Math.max(0, Math.min(100, Math.round((goal.current / goal.target) * 100)));
+        const wrap = document.createElement("div");
+        wrap.className = "smart-progress-goal";
+
+        const head = document.createElement("div");
+        head.className = "smart-progress-head";
+        const label = document.createElement("span");
+        label.textContent = goal.label;
+        const pctLabel = document.createElement("span");
+        pctLabel.textContent = `%${pct}`;
+        head.appendChild(label);
+        head.appendChild(pctLabel);
+
+        const bar = document.createElement("div");
+        bar.className = "smart-progress-bar";
+        bar.setAttribute("role", "progressbar");
+        bar.setAttribute("aria-label", goal.label);
+        bar.setAttribute("aria-valuemin", "0");
+        bar.setAttribute("aria-valuemax", "100");
+        bar.setAttribute("aria-valuenow", String(pct));
+        const fill = document.createElement("div");
+        fill.className = "smart-progress-fill";
+        fill.style.width = `${pct}%`;
+        bar.appendChild(fill);
+
+        const detail = document.createElement("div");
+        detail.className = "smart-progress-detail";
+        detail.textContent = `${formatTRNumber(goal.current)} / ${formatTRNumber(goal.target)}${goal.unit ? ` ${goal.unit}` : ""}`;
+
+        wrap.appendChild(head);
+        wrap.appendChild(bar);
+        wrap.appendChild(detail);
+        list.appendChild(wrap);
+    });
+
+    if (!goals.length) {
+        const empty = document.createElement("span");
+        empty.style.cssText = "font-size:12px;color:var(--text-muted);";
+        empty.textContent = "Hedef yok.";
+        list.appendChild(empty);
+    }
+
+    const sendBtn = buildSendToChatBtn(() => {
+        const lines = goals.map(g => `- ${g.label}: ${formatTRNumber(g.current)} / ${formatTRNumber(g.target)}${g.unit ? ` ${g.unit}` : ""}`);
+        return `İlerlememi değerlendir ve sonraki adımları öner:\n\n${lines.join("\n")}`;
+    });
+
+    card.appendChild(list);
+    card.appendChild(buildActionBar(sendBtn));
+    return card;
+}
+
+function buildSmartDataTable(block, card) {
+    const data = block.data || {};
+    const columns = (Array.isArray(data.columns) ? data.columns : []).slice(0, 10);
+    const rows = (Array.isArray(data.rows) ? data.rows : []).slice(0, 150);
+    if (!columns.length) return card;
+
+    if (data.caption) {
+        const caption = document.createElement("p");
+        caption.className = "smart-data-caption";
+        caption.textContent = String(data.caption).slice(0, 200);
+        card.appendChild(caption);
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "data-table-wrapper";
+    const table = document.createElement("table");
+    table.className = "comparison-table";
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    columns.forEach(col => {
+        const th = document.createElement("th");
+        th.scope = "col";
+        th.textContent = String(col ?? "").slice(0, 120);
+        headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    rows.forEach(row => {
+        if (!Array.isArray(row)) return;
+        const tr = document.createElement("tr");
+        columns.forEach((_col, idx) => {
+            const td = document.createElement("td");
+            td.textContent = String(row[idx] ?? "").slice(0, 300);
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    card.appendChild(wrapper);
+    return card;
+}
+
 function buildSendToChatBtn(getPrompt) {
     const btn = document.createElement("button");
     btn.className = "smart-ui-send-chat-btn";
@@ -4085,7 +4539,7 @@ async function tryStreamingSend(text, agentMode, sid) {
         const parsedClient = parseClientSmartUIBlocks(fullText);
         const cleanText = parsedClient.clean || fullText;
         deliverBotMessage(sid, cleanText, agentMode, {
-            smartUI: (finalData.smart_ui && finalData.smart_ui.length ? finalData.smart_ui : parsedClient.blocks).map(b => sanitizeClientSmartBlock(b)),
+            smartUI: (finalData.smart_ui && finalData.smart_ui.length ? finalData.smart_ui : parsedClient.blocks).map(b => sanitizeClientSmartBlock(b)).filter(Boolean),
             modelUsed: finalData.model_used || ""
         });
         if (finalData.quota) updateQuotaDisplay(finalData.quota);
@@ -4109,7 +4563,7 @@ async function tryStreamingSend(text, agentMode, sid) {
             if (partial) {
                 const p = parseClientSmartUIBlocks(fullText || "");
                 deliverBotMessage(sid, partial + "\n\n*(⏹ akış bu noktada durduruldu.)*", agentMode, {
-                    smartUI: p.blocks.map(b => sanitizeClientSmartBlock(b))
+                    smartUI: p.blocks.map(b => sanitizeClientSmartBlock(b)).filter(Boolean)
                 });
             } else {
                 deliverBotMessage(sid, "⏹ Akış durduruldu.", agentMode);
@@ -4132,11 +4586,13 @@ function sessionStillExists() {
 }
 
 function sanitizeClientSmartBlock(block) {
-    // Smart UI bloğu zaten backend'de doğrulanmış; frontend bir daha derinlemesine
-    // işleyemez. Yalnızca beklenen alanlar korunur ve dize uzunlukları sınırlanır.
-    if (!block || typeof block !== "object") return { type: "interactive_form", data: {} };
+    // Smart UI bloğu backend'de doğrulanır; frontend son savunma hattı olarak
+    // yalnızca bilinen tipleri kabul eder ve beklenen alanları sınırlar.
+    if (!block || typeof block !== "object") return null;
+    const type = String(block.type || "").toLowerCase().slice(0, 40);
+    if (!Object.prototype.hasOwnProperty.call(SMART_UI_BUILDERS, type)) return null;
     return {
-        type: String(block.type).slice(0, 40),
+        type: type,
         title: String(block.title || "").slice(0, 120),
         description: block.description == null ? null : String(block.description).slice(0, 300),
         data: (block.data && typeof block.data === "object") ? block.data : {}

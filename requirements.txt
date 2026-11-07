@@ -1,7 +1,23 @@
+# ============================================================
+# LUMINA AI - ÇALIŞMA ZAMANI BAĞIMLILIKLARI
+# Kurulum: pip install -r requirements.txt
+# ============================================================
+
+# Web sunucusu ve veri doğrulama
 fastapi>=0.110.0
 uvicorn>=0.28.0
-requests>=2.31.0
-python-dotenv>=1.0.0
 pydantic>=2.0.0
-firebase-admin>=6.0.0
 python-multipart>=0.0.9
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Kimlik doğrulama (opsiyonel çalışma zamanı; anahtar yoksa yerel mod)
+firebase-admin>=6.0.0
+
+# Dosya işleme adaptörleri (opsiyonel; paket yoksa ilgili format
+# "desteklenmiyor" olarak raporlanır, uygulama çökmez)
+pypdf>=4.0.0            # PDF metin/metadata çıkarımı
+openpyxl>=3.1.0         # XLSX/XLSM tablo ve formül okuma
+PyYAML>=6.0.0           # YAML doğrulama ve yapı çıkarımı
+Pillow>=10.0.0          # Görsel boyut/format/metadata (EXIF)
+defusedxml>=0.7.1       # Güvenli XML ayrıştırma (XML/SVG/ODF/EPUB)

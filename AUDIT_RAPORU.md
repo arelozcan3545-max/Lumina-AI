@@ -1,4 +1,7 @@
-# 🔍 LUMINA AI — TEKNİK DENETİM RAPORU (FAZ 1: KEŞİF)
+# 🔍 LUMINA AI — TEKNİK DENETİM RAPORU (FAZ 1: KEŞİF — Tarihsel)
+
+> ⚠️ **Bu belge tarihseldir.** 16 Ekim 2026 keşif aşamasını yansıtır; belirtilen hataların büyük bölümü sonraki çalışmalarda onarılmıştır.
+> Güncel durum için [FINAL_RAPOR.md](FINAL_RAPOR.md) ve [docs/](docs/) dizinine bakın.
 
 > **Denetim Tarihi:** 16 Ekim 2026
 > **Denetlenen Proje:** Lumina AI (`E:\LuminaStudios Software Company\Lumina AI`)
