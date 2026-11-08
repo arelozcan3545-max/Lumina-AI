@@ -113,6 +113,36 @@
       },
       "family_members": [],
       "subscription_events": []
+    },
+    "guest_ffd7ccc1-3e06-41ca-b477-4e4361c68829": {
+      "uid": "guest_ffd7ccc1-3e06-41ca-b477-4e4361c68829",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1794133426,
+      "daily_usage": {
+        "date": "2026-11-08",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
+    },
+    "guest_adc4533b-7832-47c8-888a-02a0597be0aa": {
+      "uid": "guest_adc4533b-7832-47c8-888a-02a0597be0aa",
+      "name": null,
+      "facts": [],
+      "subscription_tier": "standart",
+      "subscription_status": "active",
+      "created_at": 1794133850,
+      "daily_usage": {
+        "date": "2026-11-08",
+        "messages": 0,
+        "images": 0
+      },
+      "family_members": [],
+      "subscription_events": []
     }
   },
   "guest_bc5c80f7-6675-4a60-b375-4c12f11d98e3": [

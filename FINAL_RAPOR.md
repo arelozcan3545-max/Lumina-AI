@@ -369,3 +369,117 @@ Hiçbir anahtar uydurulmadı; ücretli API varsayılan kapalı.
 | Frontend otomatik testleri | **Partially implemented** (Node.js sözdizimi OK + manuel canlı DOM); Playwright/axe **Not implemented** |
 | OCR / transkripsiyon / RAR-7Z içeriği | **Not implemented** |
 | Ödeme / abonelik canlı akışı | **Requires external configuration** |
+
+---
+
+# Ek Rapor — Girly/Boys Modu, Mesaj Menüsü, Mobil ve Google Girişi
+
+**Rapor tarihi:** 8 Kasım 2026
+**Sürüm:** 3.2.3
+**Yedek:** `_BACKUP_MODES_20261108_131308` (`index.html`, `app.js`, `main.py`)
+
+> **Test gerçeği:** Bu ekte "test edildi" yalnızca gerçekten çalıştırılan `node --check`, `compileall`, pytest, canlı yerel HTTP ve canlı tarayıcı DOM testleri için kullanılmıştır. Gerçek Google hesabıyla uçtan uca OAuth, gerçek Gemini/Groq/GitHub anahtarları, Playwright/axe ve fiziksel cihaz testleri **yapılmadı**; bunlar ilgili başlıklarda ayrıca işaretlenmiştir.
+
+## 1. İncelenen Dosyalar
+
+- `index.html` — tema değişkenleri, kişilik kartları, topbar, ayarlar modalı, giriş ekranı, responsive katman.
+- `app.js` — kişilik durumu, ses motoru, mesaj render/akışı, auth akışı, sidebar davranışı.
+- `main.py` — `PERSONALITY_PROMPTS`, `build_chat_system_content`, chat/stream uçları, CORS.
+- `baslat.bat` — başlatma akışı.
+- `config.js` — yalnızca okundu; **değiştirilmedi**.
+- `tests/test_personality_modes.py`, `tests/test_api.py` — mevcut kişilik ve API testleri.
+- `docs/TESTING.md`, `docs/ARCHITECTURE.md`, `FINAL_RAPOR.md`.
+
+## 2. Oluşturulan Dosyalar
+
+- `tests/test_personality_modes.py` — Girly/Boys prompt varlığı, katman sırası ve güvenlik ifadeleri testleri.
+- `_BACKUP_MODES_20261108_131308/` — değişiklik öncesi güvenli yedek.
+- `_mobile_test.html` — yalnızca test amaçlı geçici iframe sayfası; **test sonunda silindi**.
+
+## 3. Değiştirilen Dosyalar
+
+- `index.html` — mesaj eylem çubuğu ve sağ tık menüsü stilleri, `#message-context-menu` markup'ı, erişilebilirlik katmanı, kapsamlı responsive katman, script sürümü `3.2.3`.
+- `app.js` — mobil sidebar, mesaj kimlikleri, mesaj eylemleri/menü, Google popup→redirect, hata çevirileri, kopyalama yedeği.
+- `main.py` — Girly/Boys kişilik promptları ve güvenlik katmanı sırası (mevcut mimari korunarak).
+- `baslat.bat` — `.venv` önceliği, backend (8000) + statik sunucu (5500), tarayıcıyı `localhost:5500` ile açma.
+- `docs/TESTING.md`, `docs/ARCHITECTURE.md`, `FINAL_RAPOR.md` — bu turun kayıtları.
+
+## 4. Yeni İşlevler
+
+- **Girly Mode** ve **Boys Mode** kişilikleri (frontend görsel tema + backend sistem talimatı).
+- Moda özel **arka plan ortam müziği**: Web Audio API ile sentezlenir, telifsiz ve sıfır ağ yükü; aç/kapat, ses seviyesi, `localStorage` kalıcılığı, aynı anda tek parça.
+- Sohbet balonlarında **kopyala / sesli oku / yeniden üret / sil** eylemleri ve sağ tık / basılı tut menüsü.
+- Tek mesaj silmede **geri al** bildirimi.
+- **Google girişi**: `signInWithPopup` başarısız olursa `signInWithRedirect` yedeği ve `getRedirectResult`.
+- **Mobil off-canvas sidebar** ve dokunma hedefleri.
+
+## 5. Mevcut İşlev Değişiklikleri
+
+- Sidebar mobilde `900px` eşiğinde off-canvas açılır/kapanır; masaüstü daraltma davranışı korunur.
+- Mesaj kimlikleri yeniden çizimde korunur (`presetId` / `opts.id`); kopyalama/silme doğru mesajı hedefler.
+- `sendMessage(options)` metin, `skipUserEcho` ve `agentMode` dışarıdan alabilir; yeniden üretim bu yolu kullanır.
+- Google giriş hatası mesajları Türkçeleştirildi ve genişletildi (yetkisiz alan adı, popup engeli, sağlayıcı kapalı vb.).
+- `file://` protokolünde Google girişi engellenir, `127.0.0.1` için `localhost:5500` önerilir.
+- Mevcut beş mod (Standard, Passive, Creative, Fast, Professional) **korundu**; yalnızca yenileri eklendi.
+
+## 6. Mimari Kararlar
+
+- Kişilikler **katmanlı** çalışır: güvenlik/sistem promptu → kişilik talimatı → hafıza → belge → web bağlamı. Kişilik promptu güvenlik politikasını ezmez.
+- Arka plan müziği istemci tarafında sentezlenir; ek dosya, CDN veya dış bağımlılık yok, autoplay kilidi ilk kullanıcı etkileşiminde açılır.
+- Mesaj menüsü tek bir `#message-context-menu` üzerinden `data-msg-id` ile çalışır; mesaj verisi tek kaynaktan okunur.
+- Mobil sidebar sınıf tabanlı (`mobile-open` + overlay `.active`) yönetilir; masaüstü `collapsed` davranışından ayrıdır.
+- Google girişi önce popup, engellenirse redirect; redirect sonucu açılışta okunur.
+
+## 7. Bağımlılıklar
+
+- **Yeni dış bağımlılık eklenmedi.** Müzik Web Audio API, menü saf DOM/CSS, kimlik doğrulama mevcut Firebase compat SDK (v9.22.1) ile yapıldı.
+- Backend mevcut FastAPI/uvicorn/pytest yığını korundu.
+- `config.js` değiştirilmedi; API anahtarları/sırlar açığa çıkarılmadı.
+
+## 8. Build Sonuçları
+
+- `node --check app.js` → **OK** (Node.js 26.13.0).
+- `python -m compileall main.py` → **OK**.
+- HTML tutarlılık kontrolü → 102 ID, **tekrarlanan ID yok**, `style` 1/1, `script` 8/8, `div` 218/218.
+- Yeni derleme adımı gerekmiyor (vanilla JS/CSS).
+
+## 9. Test Sonuçları
+
+**Test edildi (gerçekten çalıştırıldı):**
+- `pytest tests -q` → **112 passed, 1 warning** (6.42 s).
+- Kişilik promptları: `PERSONALITY_PROMPTS['girly']`/`['boys']` sistem içeriğinde mevcut; **güvenlik promptu kişilikten önce**; güvenlik/ilgi alanı ifadeleri doğrulandı.
+- Canlı tarayıcı: konsol hatası yok; Girly `#f472b6` / `#140d1a`, Boys `#00d2ff` / `#060b18`, topbar rozeti, ayar kartı ve `localStorage` kalıcılığı (reload sonrası) doğrulandı.
+- Sağ tık menüsü: açılma, role göre öğe gizleme, Escape ile kapatma, ilk öğeye odaklanma.
+- Silme + geri alma; yeniden üretimin doğru `text/skipUserEcho/agentMode` ile çağrılması.
+- Dokunmatik basılı tut (≈520 ms) menüsü; menünün viewport içinde kalması.
+- Mobil iframe: 390/360/320 px genişlikte yatay taşma yok, topbar çakışması yok, ayarlar modalı sığıyor/kaydırılabiliyor, giriş alanı 16px.
+- `/api/v1/health` → **200**.
+
+**Tam test edilmedi / dış yapılandırma gerekli:**
+- Gerçek Google hesabıyla uçtan uca popup/redirect akışı.
+- Gerçek Gemini/Groq/GitHub anahtarlarıyla sağlayıcı yanıtları (yalnızca mock).
+- Playwright/axe ve fiziksel cihaz emülasyonu.
+
+## 10. Bilinen Sorunlar
+
+- Gerçek sağlayıcı anahtarları yokken yanıt kalitesi ve fallback canlı doğrulanamıyor (`gemini_configured=false`, `groq_configured=false`, `github_configured=false`).
+- `serviceAccountKey.json` yok; backend `firebase: local_fallback` ile çalışıyor.
+- Müzik tarayıcı autoplay politikasına bağlı; ilk etkileşimden önce çalmayabilir (tasarım gereği).
+- Git deposu yok; commit/push yapılamıyor.
+
+## 11. Dış Yapılandırma Gerektirenler
+
+- **Firebase Console → Authentication → Google sağlayıcısı** etkin olmalı.
+- **Authorized domains** listesine `localhost` (ve kullanılıyorsa `127.0.0.1`) eklenmeli.
+- Firebase **web uygulaması appId**'si (şu an Android appId kullanılıyor) önerilir.
+- Gerçek sağlayıcı anahtarları (`GEMINI/GROQ/GITHUB`) `.env` veya sır yöneticisinde tanımlanmalı.
+- Firestore/Storage için servis hesabı ve güvenlik kuralları.
+
+## 12. Kalan İşler
+
+1. Gerçek Google hesabıyla popup ve redirect akışını uçtan uca doğrula.
+2. Firebase web appId ve yetkili alan adlarını tamamla.
+3. Gerçek anahtarlarla sağlayıcı entegrasyon testlerini ayrı ortamda çalıştır.
+4. Playwright + axe ile erişilebilirlik/responsive otomasyonu ekle.
+5. Fiziksel iOS/Android cihazda klavye ve safe-area davranışını doğrula.
+6. Git başlatılıp bu değişiklikler commit'lere ayrılsın.

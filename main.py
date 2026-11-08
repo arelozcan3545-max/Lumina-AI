@@ -867,7 +867,21 @@ PERSONALITY_PROMPTS = {
     "standard": "KİŞİLİK & TON TALİMATI (STANDART / DOSTANE): Sıcak, empatik, insan sevgisiyle dolu, anlayışlı ve konuşkan ol.",
     "professional": "KİŞİLİK & TON TALİMATI (PROFESYONEL / AKADEMİK): Resmi, kurumsal, analitik ve akademik bir üslup kullan.",
     "creative": "KİŞİLİK & TON TALİMATI (YARATICI / İLHAM VERİCİ): Sanatsal, ilham verici, metaforlarla ve yenilikçi fikirlerle zenginleştirilmiş renkli bir dil kullan.",
-    "practical": "KİŞİLİK & TON TALİMATI (HIZLI & PRATİK): Doğrudan çözüme odaklan. Vakit kaybetmeden çalışan kod blokları, özet maddeler ve net adımlar sun."
+    "practical": "KİŞİLİK & TON TALİMATI (HIZLI & PRATİK): Doğrudan çözüme odaklan. Vakit kaybetmeden çalışan kod blokları, özet maddeler ve net adımlar sun.",
+    "girly": (
+        "KİŞİLİK & TON TALİMATI (GIRLY MODE): "
+        "Son derece nazik, düşünceli, neşeli, enerjik ve samimi bir arkadaş ol. Canlı, esprili ve tatlı bir dille iletişim kur. "
+        "Günlük yaşam, stil, moda, dostluklar, eğlence ve zararsız tatlı dedikodular/trendler hakkında hevesle sohbet et; ancak asılsız söylentiler veya suçlamalar asla üretme, zorbalığı teşvik etme. "
+        "Zeki, doğru ve yardımsever kal. Hafif cilveli ve neşeli bir şaka tonu olabilir ancak asla mahrem/romantik ilişki simülasyonuna girme. "
+        "Cinsiyet kalıplarını zorlama ve kullanıcının cinsiyetini varsayma."
+    ),
+    "boys": (
+        "KİŞİLİK & TON TALİMATI (BOYS MODE): "
+        "Doğrudan, özgüvenli, dinamik, enerjik, samimi ve esprili ol. Rekabetçi ve motive edici bir ruh sergile ('Hadi yapalım!', 'Tam odak devam'). "
+        "Gerektiğinde lafı uzatmadan net ve sonuca dönük konuş. "
+        "Futbol ve spor analizleri, oyunlar (gaming), teknoloji/donanım ve dövüş sporları (teknik, disiplin, kurallar ve spor tarihi) konularında doğal ve bilgili sohbet yürüt; ancak bu ilgi alanlarını kullanıcının alakasız sorularına zorla dahil etme. "
+        "Asla kaba, hakaretamiz, düşmanca veya tehlikeli eylemleri teşvik eden agresif bir üslup kullanma."
+    )
 }
 
 # ============================================================
@@ -1484,11 +1498,15 @@ def chat_endpoint(
     except ProviderUnavailableError as exc:
         raise raise_provider_http_error(exc)
 
-    save_chat_turn(user_uid, user_input, bot_reply)
-
-    # 8. Smart UI Bloklarını Ayrıştır ve METİNDEN TEMİZLE
+    # 8. Smart UI Bloklarını Ayrıştır ve METİNDEN HER DURUMDA TEMİZLE
+    # Blok geçersizse bile ham ```smart-ui JSON'u kullanıcıya veya geçmişe sızmamalıdır.
     smart_ui_blocks = extract_smart_ui_blocks(bot_reply)
-    clean_reply = strip_smart_ui_blocks(bot_reply) if smart_ui_blocks else bot_reply
+    clean_reply = strip_smart_ui_blocks(bot_reply)
+    if not clean_reply and smart_ui_blocks:
+        clean_reply = "İşte hazırladığım etkileşimli araç 👇"
+
+    # Geçmişe ham JSON değil, kullanıcıya gösterilen temiz metin kaydedilir.
+    save_chat_turn(user_uid, user_input, clean_reply)
 
     return {
         "success": True,
@@ -1529,12 +1547,24 @@ def chat_stream_endpoint(
     def _sse(payload: dict) -> str:
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
+    def _visible_stream_text(raw: str) -> str:
+        """Akış sırasında yarım kalmış smart-ui bloklarını da gizler."""
+        cleaned = strip_smart_ui_blocks(raw)
+        # Henüz kapanmamış ```smart-ui çiti varsa, oradan sonrasını gösterme.
+        m = re.search(r"```smart-ui", cleaned, re.IGNORECASE)
+        if m:
+            cleaned = cleaned[:m.start()]
+        return cleaned
+
     def _single_shot_stream(reply: str, model_label: str):
         """Akış desteklemeyen yollar (kurucu/ismi/hazır yanıt) için SSE sarmalayıcı."""
         def _gen():
             smart_blocks = extract_smart_ui_blocks(reply)
-            save_chat_turn(user_uid, user_input, reply)
-            yield _sse({"chunk": reply})
+            clean_reply = strip_smart_ui_blocks(reply)
+            if not clean_reply and smart_blocks:
+                clean_reply = "İşte hazırladığım etkileşimli araç 👇"
+            save_chat_turn(user_uid, user_input, clean_reply)
+            yield _sse({"chunk": clean_reply})
             yield _sse({
                 "done": True,
                 "quota": format_quota_response(user_uid, has_custom_key),
@@ -1588,14 +1618,28 @@ def chat_stream_endpoint(
 
     def stream_generator():
         full_reply = []
+        emitted_text = ""
         try:
             for chunk in generator:
                 full_reply.append(chunk)
-                yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
+                # Ham smart-ui JSON'u parça olarak yayınlanmaz; görünen metin
+                # yalnızca temizlenmiş içerikten artımlı olarak gönderilir.
+                visible = _visible_stream_text("".join(full_reply))
+                if visible.startswith(emitted_text):
+                    delta = visible[len(emitted_text):]
+                    if delta:
+                        emitted_text = visible
+                        yield f"data: {json.dumps({'chunk': delta}, ensure_ascii=False)}\n\n"
+                # Beklenmeyen orta-blok temizliğinde parçalar geri alınamaz;
+                # nihai temiz metin 'done' olayındaki client düzeltmesiyle teslim edilir.
 
             joined = "".join(full_reply)
             smart_blocks = extract_smart_ui_blocks(joined)
-            save_chat_turn(user_uid, user_input, joined)
+            clean_joined = strip_smart_ui_blocks(joined)
+            if not clean_joined and smart_blocks:
+                clean_joined = "İşte hazırladığım etkileşimli araç 👇"
+            # Geçmişe ham JSON değil, temiz metin kaydedilir.
+            save_chat_turn(user_uid, user_input, clean_joined)
             yield f"data: {json.dumps({'done': True, 'quota': format_quota_response(user_uid, has_custom_key), 'model_used': used_label, 'smart_ui': smart_blocks}, ensure_ascii=False)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': f'Akış sırasında hata oluştu: {exc}'}, ensure_ascii=False)}\n\n"

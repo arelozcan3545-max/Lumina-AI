@@ -52,6 +52,7 @@ SUBSCRIPTION_PLANS: Dict[str, Dict[str, Any]] = {
         "description": "Bireysel kullanıcılar için yüksek kotalı ve hesaplı çözüm.",
         "badge": "Popüler",
         "model_tier": "Hızlı & Gelişmiş (Gemini 3.5 Flash / GPT-OSS 20B)",
+        "messages_per_day": 1000,
         "images_per_day": 25,
         "images_per_conversation": 15,
         "max_members": 1,

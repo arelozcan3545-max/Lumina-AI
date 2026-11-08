@@ -135,8 +135,28 @@ document.addEventListener("DOMContentLoaded", () => {
     setupSpeechRecognition();
     initBackgroundFeatures();   // tercihler, bildirimler, arka plan işleri, kendiliğinden yazma
     loadFileFormatCatalog();    // desteklenen dosya türleri ve gerçek yükleme sınırı
+    setupMessageContextMenu();  // sağ tık / basılı tut menüsü
+    syncSidebarViewport();
+    window.addEventListener("resize", syncSidebarViewport);
+
+    // Kullanıcı ilk etkileşiminde Web Audio kilidini güvenle aç
+    const unlockAudio = () => {
+        if (window.LuminaModeAudioEngine && window.LuminaModeAudioEngine.enabled) {
+            window.LuminaModeAudioEngine.initContext();
+            if (currentPersonality === "girly" || currentPersonality === "boys") {
+                if (!window.LuminaModeAudioEngine.isPlaying) {
+                    window.LuminaModeAudioEngine.play(currentPersonality);
+                }
+            }
+        }
+        window.removeEventListener("pointerdown", unlockAudio);
+        window.removeEventListener("keydown", unlockAudio);
+    };
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    window.addEventListener("keydown", unlockAudio, { once: true });
 
     if (isFirebaseActive && auth) {
+        handleAuthRedirectResult();
         auth.onAuthStateChanged((user) => {
             if (user) {
                 currentUser = user;
@@ -406,6 +426,7 @@ function initThemeAndFont() {
     document.documentElement.style.setProperty("--font-scale", currentFontScale);
 
     applyAccentColor(currentAccentColor);
+    applyPersonalityModeUI(currentPersonality);
 }
 
 function applyAccentColor(hex) {
@@ -481,17 +502,367 @@ const PERSONALITY_DESCRIPTIONS = {
         title: "Hızlı & Pratik",
         badge: "Kod & Çözüm",
         instruction: "KİŞİLİK & TON TALİMATI (HIZLI & PRATİK): Doğrudan çözüme odaklan. Vakit kaybetmeden çalışan kod blokları, özet maddeler ve net adımlar sun."
+    },
+    "girly": {
+        title: "Girly Mode",
+        badge: "Zarif & Neşeli",
+        icon: "🌸",
+        instruction: "KİŞİLİK & TON TALİMATI (GIRLY MODE): Son derece nazik, düşünceli, neşeli, cıvıl cıvıl, enerjik ve samimi bir arkadaş ol. Canlı, esprili ve tatlı bir dille iletişim kur. Günlük yaşam, stil, moda, dostluklar, eğlence ve zararsız tatlı dedikodular/trendler hakkında hevesle sohbet et; ancak asılsız söylentiler veya suçlamalar asla üretme, zorbalığı teşvik etme. Zeki, doğru ve yardımsever kal. Hafif cilveli ve neşeli bir şaka tonu olabilir ancak asla mahrem/romantik ilişki simülasyonuna girme. Cinsiyet kalıplarını zorlama ve kullanıcının cinsiyetini varsayma."
+    },
+    "boys": {
+        title: "Boys Mode",
+        badge: "Dinamik & Net",
+        icon: "⚡",
+        instruction: "KİŞİLİK & TON TALİMATI (BOYS MODE): Doğrudan, özgüvenli, dinamik, enerjik, samimi ve esprili ol. Rekabetçi ve motive edici bir ruh sergile ('Hadi yapalım!', 'Tam odak devam'). Gerektiğinde lafı uzatmadan net ve sonuca dönük konuş. Futbol ve spor analizleri, oyunlar (gaming), teknoloji/donanım ve dövüş sporları (teknik, disiplin, kurallar ve spor tarihi) konularında doğal ve bilgili sohbet yürüt; ancak bu ilgi alanlarını kullanıcının alakasız sorularına zorla dahil etme. Asla kaba, hakaretamiz, düşmanca veya tehlikeli eylemleri teşvik eden agresif bir üslup kullanma."
     }
 };
+
+// ============================================================
+// MOD ORTAM MÜZİĞİ MOTORU (GIRLY & BOYS AMBIENT AUDIO ENGINE)
+// Saf Web Audio API sentezleyici: Royalty-free, sıfır ağ yükü, sıfır telif riski.
+// ============================================================
+
+const LuminaModeAudioEngine = {
+    ctx: null,
+    activeMode: null,
+    isPlaying: false,
+    isDucked: false,
+    inVoiceMode: false,
+    intervalId: null,
+    masterGain: null,
+    duckGain: null,
+    volume: parseInt(localStorage.getItem("lumina_mode_audio_volume") || "40", 10),
+    enabled: localStorage.getItem("lumina_mode_audio_enabled") === "true",
+
+    initContext() {
+        if (!this.ctx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return false;
+            this.ctx = new AC();
+            this.masterGain = this.ctx.createGain();
+            this.duckGain = this.ctx.createGain();
+            this.duckGain.gain.value = 1.0;
+            this.setVolume(this.volume);
+            this.masterGain.connect(this.duckGain);
+            this.duckGain.connect(this.ctx.destination);
+        }
+        if (this.ctx.state === "suspended") {
+            this.ctx.resume().catch(() => {});
+        }
+        return true;
+    },
+
+    setVolume(pct) {
+        this.volume = Math.max(0, Math.min(100, pct));
+        localStorage.setItem("lumina_mode_audio_volume", this.volume);
+        if (this.masterGain && this.ctx) {
+            const targetVal = this.enabled ? (this.volume / 100) * 0.28 : 0;
+            this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+            this.masterGain.gain.linearRampToValueAtTime(targetVal, this.ctx.currentTime + 0.1);
+        }
+        this.updateUI();
+    },
+
+    setEnabled(val) {
+        this.enabled = Boolean(val);
+        localStorage.setItem("lumina_mode_audio_enabled", this.enabled);
+        if (this.enabled) {
+            if (currentPersonality === "girly" || currentPersonality === "boys") {
+                this.play(currentPersonality);
+            }
+        } else {
+            this.stop();
+        }
+        this.updateUI();
+    },
+
+    toggle() {
+        this.setEnabled(!this.enabled);
+        showToast(
+            this.enabled ? "Ortam Sesi Açıldı" : "Ortam Sesi Kapatıldı",
+            this.enabled ? `${currentPersonality === "girly" ? "Girly" : "Boys"} modu arka plan melodisi çalıyor.` : "Ortam müziği susturuldu."
+        );
+    },
+
+    duck() {
+        if (!this.duckGain || !this.ctx) return;
+        this.isDucked = true;
+        this.duckGain.gain.setValueAtTime(this.duckGain.gain.value, this.ctx.currentTime);
+        this.duckGain.gain.linearRampToValueAtTime(0.08, this.ctx.currentTime + 0.2);
+    },
+
+    unduck() {
+        if (!this.duckGain || !this.ctx || this.inVoiceMode) return;
+        this.isDucked = false;
+        this.duckGain.gain.setValueAtTime(this.duckGain.gain.value, this.ctx.currentTime);
+        this.duckGain.gain.linearRampToValueAtTime(1.0, this.ctx.currentTime + 0.35);
+    },
+
+    onVoiceStart() {
+        this.inVoiceMode = true;
+        this.duck();
+    },
+
+    onVoiceEnd() {
+        this.inVoiceMode = false;
+        this.unduck();
+    },
+
+    stop() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
+        this.isPlaying = false;
+        this.activeMode = null;
+        if (this.masterGain && this.ctx) {
+            this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+            this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.2);
+        }
+        this.updateUI();
+    },
+
+    onModeChange(mode) {
+        if (mode === "girly" || mode === "boys") {
+            if (this.enabled) {
+                this.play(mode);
+            } else {
+                this.stop();
+            }
+        } else {
+            this.stop();
+        }
+        this.updateUI();
+    },
+
+    play(mode) {
+        if (!this.enabled || (mode !== "girly" && mode !== "boys")) {
+            this.stop();
+            return;
+        }
+        if (!this.initContext()) return;
+
+        this.stop(); // Önceki olası kanalı temizle (asla çakışma olmasın)
+        this.activeMode = mode;
+        this.isPlaying = true;
+
+        const baseGain = (this.volume / 100) * 0.28;
+        this.masterGain.gain.setValueAtTime(0.001, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(baseGain, this.ctx.currentTime + 0.4);
+
+        if (mode === "girly") {
+            this.startGirlyLoop();
+        } else if (mode === "boys") {
+            this.startBoysLoop();
+        }
+        this.updateUI();
+    },
+
+    // Girly Mode: Yumuşak, dingin, sevimli pentatonik arpej & sıcak pad
+    startGirlyLoop() {
+        const chordProgressions = [
+            [261.63, 329.63, 392.00, 523.25], // C maj
+            [220.00, 261.63, 329.63, 440.00], // A min
+            [174.61, 220.00, 261.63, 349.23], // F maj
+            [196.00, 246.94, 293.66, 392.00]  // G maj
+        ];
+        let step = 0;
+
+        const playChimeNote = (freq, time, dur = 1.6) => {
+            if (!this.ctx || !this.isPlaying || this.activeMode !== "girly") return;
+            try {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const filter = this.ctx.createBiquadFilter();
+
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(freq, time);
+
+                filter.type = "lowpass";
+                filter.frequency.setValueAtTime(1400, time);
+
+                gain.gain.setValueAtTime(0.0001, time);
+                gain.gain.linearRampToValueAtTime(0.24, time + 0.08);
+                gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+
+                osc.start(time);
+                osc.stop(time + dur);
+            } catch (e) {}
+        };
+
+        const tick = () => {
+            if (!this.ctx || !this.isPlaying || this.activeMode !== "girly") return;
+            const now = this.ctx.currentTime;
+            const chord = chordProgressions[step % chordProgressions.length];
+            chord.forEach((freq, idx) => {
+                playChimeNote(freq, now + idx * 0.38, 1.8);
+            });
+            // İnce zarif ışıltı çanı
+            if (step % 2 === 0) {
+                playChimeNote(659.25, now + 1.6, 1.2);
+            }
+            step++;
+        };
+
+        tick();
+        this.intervalId = setInterval(tick, 2400);
+    },
+
+    // Boys Mode: Dinamik, derin bas ve siber/spor teknolojik ambiyans
+    startBoysLoop() {
+        const bassFreqs = [55.00, 65.41, 73.42, 49.00]; // A1, C2, D2, G1
+        let step = 0;
+
+        const playTechPulse = (freq, time, dur = 0.45) => {
+            if (!this.ctx || !this.isPlaying || this.activeMode !== "boys") return;
+            try {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const filter = this.ctx.createBiquadFilter();
+
+                osc.type = "sawtooth";
+                osc.frequency.setValueAtTime(freq, time);
+
+                filter.type = "lowpass";
+                filter.frequency.setValueAtTime(320, time);
+                filter.frequency.exponentialRampToValueAtTime(90, time + dur);
+
+                gain.gain.setValueAtTime(0.0001, time);
+                gain.gain.linearRampToValueAtTime(0.32, time + 0.04);
+                gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+
+                osc.start(time);
+                osc.stop(time + dur);
+            } catch (e) {}
+        };
+
+        const playTechBeep = (freq, time) => {
+            if (!this.ctx || !this.isPlaying || this.activeMode !== "boys") return;
+            try {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = "triangle";
+                osc.frequency.setValueAtTime(freq, time);
+                gain.gain.setValueAtTime(0.001, time);
+                gain.gain.linearRampToValueAtTime(0.08, time + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.22);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start(time);
+                osc.stop(time + 0.25);
+            } catch (e) {}
+        };
+
+        const tick = () => {
+            if (!this.ctx || !this.isPlaying || this.activeMode !== "boys") return;
+            const now = this.ctx.currentTime;
+            const freq = bassFreqs[step % bassFreqs.length];
+
+            // Ritmik modern nabız
+            playTechPulse(freq, now, 0.48);
+            playTechPulse(freq, now + 0.5, 0.35);
+
+            if (step % 2 === 1) {
+                playTechBeep(880, now + 0.25);
+            }
+            step++;
+        };
+
+        tick();
+        this.intervalId = setInterval(tick, 1000);
+    },
+
+    updateUI() {
+        const toggle = document.getElementById("pref-mode-audio-toggle");
+        if (toggle) toggle.checked = this.enabled;
+
+        const volSlider = document.getElementById("pref-mode-audio-volume");
+        if (volSlider) volSlider.value = this.volume;
+
+        const volLabel = document.getElementById("mode-audio-volume-label");
+        if (volLabel) volLabel.textContent = this.volume + "%";
+
+        const quickBtn = document.getElementById("mode-audio-quick-btn");
+        const quickIcon = document.getElementById("mode-audio-quick-icon");
+        if (quickBtn && quickIcon) {
+            const isModeActive = currentPersonality === "girly" || currentPersonality === "boys";
+            quickBtn.style.display = isModeActive ? "inline-flex" : "none";
+            quickIcon.textContent = this.enabled ? "🔊" : "🔇";
+            quickBtn.classList.toggle("active", this.enabled);
+        }
+    }
+};
+
+window.LuminaModeAudioEngine = LuminaModeAudioEngine;
+
+function toggleModeAudio(checked) {
+    LuminaModeAudioEngine.setEnabled(checked);
+}
+
+function onModeAudioVolumeInput(val) {
+    LuminaModeAudioEngine.setVolume(parseInt(val, 10) || 0);
+}
+
+function previewModeAudio() {
+    LuminaModeAudioEngine.setEnabled(true);
+    LuminaModeAudioEngine.play(currentPersonality === "boys" ? "boys" : "girly");
+}
+
+function toggleModeAudioQuick() {
+    LuminaModeAudioEngine.toggle();
+}
+
+function applyPersonalityModeUI(mode) {
+    const doc = document.documentElement;
+    if (mode === "girly" || mode === "boys") {
+        doc.setAttribute("data-personality-mode", mode);
+    } else {
+        doc.removeAttribute("data-personality-mode");
+    }
+
+    document.querySelectorAll(".personality-card").forEach(el => {
+        el.classList.toggle("active", el.dataset.personality === mode);
+    });
+
+    // Topbar rozeti
+    const pill = document.getElementById("mode-topbar-pill");
+    const icon = document.getElementById("mode-topbar-icon");
+    const title = document.getElementById("mode-topbar-title");
+
+    if (pill && icon && title) {
+        if (mode === "girly") {
+            pill.style.display = "inline-flex";
+            pill.className = "mode-topbar-indicator girly";
+            icon.textContent = "🌸";
+            title.textContent = "Girly Mode";
+        } else if (mode === "boys") {
+            pill.style.display = "inline-flex";
+            pill.className = "mode-topbar-indicator boys";
+            icon.textContent = "⚡";
+            title.textContent = "Boys Mode";
+        } else {
+            pill.style.display = "none";
+        }
+    }
+
+    // Audio motoru senkronizasyonu
+    LuminaModeAudioEngine.onModeChange(mode);
+}
 
 function selectPersonality(type) {
     if (!PERSONALITY_DESCRIPTIONS[type]) type = "standard";
     currentPersonality = type;
     localStorage.setItem("lumina_personality", type);
 
-    document.querySelectorAll(".personality-card").forEach(el => {
-        el.classList.toggle("active", el.dataset.personality === type);
-    });
+    applyPersonalityModeUI(type);
 
     showToast("Kişilik Güncellendi", `${PERSONALITY_DESCRIPTIONS[type].title} aktif edildi.`);
 }
@@ -504,50 +875,62 @@ const VOICE_PROFILES = {
     "jenna": {
         name: "Jenna",
         gender: "female",
-        pitch: 1.14,
-        rate: 1.0,
-        preferredVoices: ["jenny", "zira", "emel", "yelda", "filiz", "samantha", "victoria", "kız", "female"],
-        previewText: "Merhaba! Ben Jenna. Seninle konuşmaktan mutluluk duyuyorum, ne öğrenmek istersin?"
+        persona: "Canlı, Tatlı & Neşeli",
+        pitchFemale: 1.15,
+        pitchMaleFallback: 1.40,
+        rate: 1.05,
+        preferredVoices: ["emel online", "natural", "google türkçe", "emel", "filiz", "yelda", "samantha", "victoria"],
+        previewText: "Merhaba! Ben Jenna. Cıvıl cıvıl ve enerjik bir kadın sesiyim. Seninle sohbet etmek harika!"
     },
     "emma": {
         name: "Emma",
         gender: "female",
-        pitch: 1.04,
-        rate: 0.94,
-        preferredVoices: ["samantha", "karen", "emel", "zira", "female"],
-        previewText: "Selam! Ben Emma. Sakin ve huzurlu bir sohbet için buradayım. Aklındakileri benimle paylaşabilirsin."
+        persona: "Sakin, Sıcak & Huzurlu",
+        pitchFemale: 0.96,
+        pitchMaleFallback: 1.22,
+        rate: 0.88,
+        preferredVoices: ["filiz", "emel online", "google türkçe", "emel", "yelda", "karen"],
+        previewText: "Selam. Ben Emma. Sakin, dinlendirici ve huzurlu bir kadın sesiyim. Aklındakileri rahatça paylaşabilirsin."
     },
     "elif": {
         name: "Elif",
         gender: "female",
-        pitch: 1.1,
+        persona: "Akıcı & Doğal Türkçe",
+        pitchFemale: 1.06,
+        pitchMaleFallback: 1.30,
         rate: 1.0,
-        preferredVoices: ["emel", "yelda", "filiz", "tr-tr", "turkish", "female"],
-        previewText: "Merhaba, ben Elif! Türkçe sorularını yanıtlamaktan ve birlikte çalışmaktan keyif alırım."
+        preferredVoices: ["google türkçe", "emel online", "yelda", "filiz", "emel", "tr-tr"],
+        previewText: "Merhaba, ben Elif! Çok net, berrak ve akıcı bir Türkçe diksiyonuyla sana yardımcı olmaktan mutluluk duyarım."
     },
     "tommy": {
         name: "Tommy",
         gender: "male",
-        pitch: 0.88,
-        rate: 1.02,
-        preferredVoices: ["guy", "david", "mark", "tolga", "baris", "male"],
-        previewText: "Selam dostum! Ben Tommy. Hızlı, dinamik ve net çözümler için hazırım. Ne üzerinde çalışıyoruz?"
+        persona: "Dinamik, Genç & Hızlı",
+        pitchFemaleFallback: 0.82,
+        pitchMale: 0.98,
+        rate: 1.10,
+        preferredVoices: ["tolga online", "natural", "ahmet", "cem", "tolga", "guy", "david"],
+        previewText: "Selam dostum! Ben Tommy. Hızlı, dinamik ve enerjik bir erkek sesiyim. Hadi hemen başlayalım!"
     },
     "david": {
         name: "David",
         gender: "male",
-        pitch: 0.78,
-        rate: 0.95,
-        preferredVoices: ["david", "george", "tolga", "male"],
-        previewText: "İyi günler. Ben David. Mantık, analiz ve strateji konularında sana rehberlik etmek için yanındayım."
+        persona: "Tok, Karizmatik & Derin",
+        pitchFemaleFallback: 0.70,
+        pitchMale: 0.74,
+        rate: 0.90,
+        preferredVoices: ["ahmet", "tolga online", "tolga", "cem", "george"],
+        previewText: "İyi günler. Ben David. Tok, derin ve net bir erkek sesiyle analitik çözümlerde yanındayım."
     },
     "baris": {
         name: "Barış",
         gender: "male",
-        pitch: 0.86,
+        persona: "Samimi & Doğal Erkek",
+        pitchFemaleFallback: 0.76,
+        pitchMale: 0.88,
         rate: 1.0,
-        preferredVoices: ["tolga", "tr-tr", "turkish", "male"],
-        previewText: "Selam! Ben Barış. Sorularını yanıtlamak ve her konuda yardımcı olmak için buradayım."
+        preferredVoices: ["tolga online", "tolga", "ahmet", "cem", "tr-tr"],
+        previewText: "Selam! Ben Barış. Tıpkı karşılıklı konuşan yakın bir arkadaşın gibi doğal ve samimi bir erkek sesiyim."
     }
 };
 
@@ -560,7 +943,10 @@ function selectVoiceOption(voiceKey) {
         el.classList.toggle("active", el.dataset.voice === voiceKey);
     });
 
-    showToast("Ses Seçildi", `${VOICE_PROFILES[voiceKey].name} sesi aktif edildi.`);
+    showToast("Ses Değiştirildi", `${VOICE_PROFILES[voiceKey].name} (${VOICE_PROFILES[voiceKey].persona}) aktif edildi.`);
+
+    // Seçilen sesi anında dinleterek farkı hissettir
+    previewVoice(voiceKey);
 }
 
 function previewVoice(voiceKey) {
@@ -587,22 +973,50 @@ function adjustFontSize(delta) {
 // 4. SIDEBAR & RESPONSIVE DRAWER
 // ============================================================
 
+const MOBILE_SIDEBAR_QUERY = "(max-width: 900px)";
+
+function isMobileSidebar() {
+    return window.matchMedia
+        ? window.matchMedia(MOBILE_SIDEBAR_QUERY).matches
+        : window.innerWidth <= 900;
+}
+
 function toggleSidebar() {
     const sidebar = document.getElementById("sidebar");
     const overlay = document.getElementById("sidebar-overlay");
     if (!sidebar) return;
 
-    sidebar.classList.toggle("collapsed");
-    if (overlay) {
-        overlay.classList.toggle("active", !sidebar.classList.contains("collapsed"));
+    if (isMobileSidebar()) {
+        const isOpen = sidebar.classList.toggle("mobile-open");
+        sidebar.classList.remove("collapsed");
+        if (overlay) overlay.classList.toggle("active", isOpen);
+        return;
     }
+
+    sidebar.classList.remove("mobile-open");
+    sidebar.classList.toggle("collapsed");
+    if (overlay) overlay.classList.remove("active");
 }
 
 function closeSidebarOnMobile() {
-    if (window.innerWidth <= 768) {
-        const sidebar = document.getElementById("sidebar");
-        const overlay = document.getElementById("sidebar-overlay");
-        if (sidebar) sidebar.classList.add("collapsed");
+    if (!isMobileSidebar()) return;
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("sidebar-overlay");
+    if (sidebar) sidebar.classList.remove("mobile-open");
+    if (overlay) overlay.classList.remove("active");
+}
+
+// Masaüstü ↔ mobil geçişinde menü durumunu tutarlı tutar.
+function syncSidebarViewport() {
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("sidebar-overlay");
+    const mobile = isMobileSidebar();
+    if (!sidebar) return;
+
+    if (mobile) {
+        sidebar.classList.remove("collapsed");
+    } else {
+        sidebar.classList.remove("mobile-open");
         if (overlay) overlay.classList.remove("active");
     }
 }
@@ -614,7 +1028,19 @@ function closeSidebarOnMobile() {
 function loadChatSessions() {
     try {
         const stored = localStorage.getItem("lumina_chat_sessions");
-        sessions = stored ? jsonParseSafe(stored, []) : [];
+        const parsed = stored ? jsonParseSafe(stored, []) : [];
+        sessions = (Array.isArray(parsed) ? parsed : [])
+            .filter(s => s && typeof s === "object" && s.id)
+            .map(s => ({
+                ...s,
+                messages: Array.isArray(s.messages)
+                    ? s.messages
+                        .map(m => (m && typeof m === "object")
+                            ? { ...m, id: m.id || makeMessageId() }
+                            : null)
+                        .filter(Boolean)
+                    : []
+            }));
     } catch (e) {
         sessions = [];
     }
@@ -747,11 +1173,11 @@ function renderCurrentSession() {
 
     session.messages.forEach(msg => {
         if (msg.role === "user") {
-            renderUserMessageElement(msg.text, false);
+            renderUserMessageElement(msg.text, false, msg.id);
         } else if (msg.role === "bot") {
-            renderBotMessageElement(msg.text, msg.agentMode, false, { proactive: !!msg.proactive, smartUI: msg.smartUI, modelUsed: msg.modelUsed });
+            renderBotMessageElement(msg.text, msg.agentMode, false, { id: msg.id, proactive: !!msg.proactive, smartUI: msg.smartUI, modelUsed: msg.modelUsed });
         } else if (msg.role === "image") {
-            renderImageCardElement(msg.imageData, false);
+            renderImageCardElement(msg.imageData, false, msg.id);
         }
     });
 
@@ -817,16 +1243,36 @@ function scrollToBottom() {
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-function renderUserMessageElement(text, save = true) {
+// Her mesaja kararlı bir kimlik verilir; sağ tık / basılı tut menüsü bu kimlikle çalışır.
+function makeMessageId() {
+    return "msg_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+const MSG_ACTION_ICONS = {
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+    regenerate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path></svg>'
+};
+
+function messageActionBarHTML(role) {
+    const copyBtn = `<button type="button" class="msg-action-btn" data-msg-action="copy" title="Mesajı kopyala" aria-label="Mesajı kopyala">${MSG_ACTION_ICONS.copy}</button>`;
+    const regenBtn = `<button type="button" class="msg-action-btn" data-msg-action="regenerate" title="Yeniden üret" aria-label="Yanıtı yeniden üret">${MSG_ACTION_ICONS.regenerate}</button>`;
+    return `<div class="message-actions">${copyBtn}${role === "bot" ? regenBtn : ""}</div>`;
+}
+
+function renderUserMessageElement(text, save = true, presetId = null) {
     removeStarterHero();
     const stream = document.getElementById("chat-stream");
     if (!stream) return;
 
+    const msgId = presetId || makeMessageId();
     const row = document.createElement("div");
     row.className = "message-row user-row";
+    row.dataset.msgId = msgId;
+    row.dataset.role = "user";
     row.innerHTML = `
         <div class="msg-meta">Siz</div>
         <div class="message-bubble user-bubble">${escapeHTML(text)}</div>
+        ${messageActionBarHTML("user")}
     `;
     stream.appendChild(row);
     scrollToBottom();
@@ -834,7 +1280,7 @@ function renderUserMessageElement(text, save = true) {
     if (save) {
         const session = getCurrentSession();
         if (session) {
-            session.messages.push({ role: "user", text: text });
+            session.messages.push({ id: msgId, role: "user", text: text });
             if (session.messages.length === 1) {
                 session.title = text.slice(0, 30) + (text.length > 30 ? "..." : "");
             }
@@ -970,8 +1416,11 @@ function renderBotMessageElement(text, agentMode = "general", save = true, opts 
     const stream = document.getElementById("chat-stream");
     if (!stream) return;
 
+    const msgId = opts.id || makeMessageId();
     const row = document.createElement("div");
     row.className = "message-row bot-row";
+    row.dataset.msgId = msgId;
+    row.dataset.role = "bot";
 
     const title = AGENT_TITLES[agentMode] || "Lumina AI";
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -984,6 +1433,7 @@ function renderBotMessageElement(text, agentMode = "general", save = true, opts 
         <div class="message-bubble bot-bubble">
             ${formatMarkdownAndCode(text)}
         </div>
+        ${messageActionBarHTML("bot")}
     `;
 
     // Smart UI (AI tarafından üretilen güvenli interaktif bileşenler)
@@ -1000,7 +1450,7 @@ function renderBotMessageElement(text, agentMode = "general", save = true, opts 
     if (save) {
         const session = getCurrentSession();
         if (session) {
-            const entry = { role: "bot", text: text, agentMode: agentMode };
+            const entry = { id: msgId, role: "bot", text: text, agentMode: agentMode };
             if (opts.proactive) entry.proactive = true;
             if (opts.modelUsed) entry.modelUsed = opts.modelUsed;
             if (smartBlocks.length) entry.smartUI = smartBlocks;
@@ -1010,13 +1460,16 @@ function renderBotMessageElement(text, agentMode = "general", save = true, opts 
     }
 }
 
-function renderImageCardElement(data, save = true) {
+function renderImageCardElement(data, save = true, presetId = null) {
     removeStarterHero();
     const stream = document.getElementById("chat-stream");
     if (!stream) return;
 
+    const msgId = presetId || makeMessageId();
     const row = document.createElement("div");
     row.className = "message-row bot-row";
+    row.dataset.msgId = msgId;
+    row.dataset.role = "image";
 
     const rawPrompt = data.original_prompt || "Görsel";
     const promptText = escapeHTML(rawPrompt);
@@ -1056,10 +1509,304 @@ function renderImageCardElement(data, save = true) {
     if (save) {
         const session = getCurrentSession();
         if (session) {
-            session.messages.push({ role: "image", imageData: data });
+            session.messages.push({ id: msgId, role: "image", imageData: data });
             saveChatSessions();
         }
     }
+}
+
+// ============================================================
+// 7b. MESAJ EYLEMLERİ (KOPYALA / YENİDEN ÜRET / SİL)
+// ============================================================
+
+let contextMenuRow = null;
+
+function getMessageByRow(row) {
+    const session = getCurrentSession();
+    if (!session || !row) return null;
+
+    const msgId = row.dataset.msgId;
+    if (msgId) {
+        const found = session.messages.find(m => m.id === msgId);
+        if (found) return found;
+    }
+
+    // Eski kayıtlarda kimlik yoksa sırayla eşleştir ve kalıcı kimlik ver.
+    const rows = Array.from(document.querySelectorAll("#chat-stream .message-row"))
+        .filter(r => r.dataset.msgId);
+    const index = rows.indexOf(row);
+    if (index >= 0) {
+        const msg = session.messages[index];
+        if (msg) {
+            if (!msg.id) msg.id = makeMessageId();
+            row.dataset.msgId = msg.id;
+            return msg;
+        }
+    }
+    return null;
+}
+
+async function copyMessageRow(row) {
+    const msg = getMessageByRow(row);
+    if (!msg) return;
+    const text = msg.role === "image"
+        ? (msg.imageData && msg.imageData.original_prompt) || ""
+        : (msg.text || "");
+    if (!text) {
+        showToast("Kopyalanamadı", "Bu mesajda kopyalanacak metin yok.");
+        return;
+    }
+
+    try {
+        let copied = false;
+
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(text);
+                copied = true;
+            } catch (clipErr) {
+                copied = false; // izin reddedilirse aşağıdaki yedeğe geç
+            }
+        }
+
+        if (!copied) {
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.setAttribute("readonly", "");
+            area.style.position = "fixed";
+            area.style.opacity = "0";
+            document.body.appendChild(area);
+            area.select();
+            try {
+                copied = document.execCommand("copy");
+            } catch (execErr) {
+                copied = false;
+            }
+            area.remove();
+        }
+
+        if (copied) {
+            showToast("Kopyalandı", "Mesaj panoya kopyalandı.");
+        } else {
+            showToast("Kopyalanamadı", "Tarayıcı pano erişimine izin vermedi.");
+        }
+    } catch (e) {
+        showToast("Kopyalanamadı", "Tarayıcı pano erişimine izin vermedi.");
+    }
+}
+
+function deleteMessageRow(row) {
+    const session = getCurrentSession();
+    const msg = getMessageByRow(row);
+    if (!session || !msg) return;
+
+    const index = session.messages.findIndex(m => m.id === msg.id);
+    if (index < 0) return;
+
+    const [removed] = session.messages.splice(index, 1);
+    saveChatSessions();
+    renderCurrentSession();
+
+    // Kısa süreli geri alma: yanlışlıkla silmeye karşı güvenli.
+    showToast("Mesaj silindi", "Geri almak için bu bildirime dokunun.", () => {
+        const target = getCurrentSession();
+        if (!target) return;
+        target.messages.splice(Math.min(index, target.messages.length), 0, removed);
+        saveChatSessions();
+        renderCurrentSession();
+        showToast("Geri alındı", "Mesaj sohbete geri eklendi.");
+    }, 8000);
+}
+
+function speakMessageRow(row) {
+    const msg = getMessageByRow(row);
+    if (!msg || !msg.text) return;
+    speakText(String(msg.text).slice(0, 1200));
+}
+
+async function regenerateBotMessage(row) {
+    const session = getCurrentSession();
+    const msg = getMessageByRow(row);
+    if (!session || !msg) return;
+
+    if (chatBusy()) {
+        showToast("Lumina hâlâ yanıtlıyor", "Mevcut yanıt tamamlanınca yeniden üretebilirsin.");
+        return;
+    }
+
+    if (msg.role === "image") {
+        const data = msg.imageData || {};
+        if (!data.original_prompt) return;
+        await regenerateImage(
+            data.original_prompt,
+            data.style || selectedImageStyle,
+            data.aspect_ratio || selectedImageRatio
+        );
+        return;
+    }
+
+    if (msg.role !== "bot") {
+        showToast("Yeniden üretilemez", "Yalnızca Lumina yanıtları yeniden üretilebilir.");
+        return;
+    }
+
+    const index = session.messages.findIndex(m => m.id === msg.id);
+    let previousUser = null;
+    for (let i = index - 1; i >= 0; i--) {
+        if (session.messages[i].role === "user" && session.messages[i].text) {
+            previousUser = session.messages[i];
+            break;
+        }
+    }
+    if (!previousUser) {
+        showToast("Yeniden üretilemez", "Bu yanıtın öncesinde bir kullanıcı mesajı bulunamadı.");
+        return;
+    }
+
+    session.messages.splice(index, 1);
+    saveChatSessions();
+    renderCurrentSession();
+    await sendMessage({
+        text: previousUser.text,
+        skipUserEcho: true,
+        agentMode: msg.agentMode || currentAgentMode
+    });
+}
+
+function handleMessageAction(action, row) {
+    if (!row) return;
+    if (action === "copy") copyMessageRow(row);
+    else if (action === "regenerate") regenerateBotMessage(row);
+    else if (action === "speak") speakMessageRow(row);
+    else if (action === "delete") deleteMessageRow(row);
+}
+
+function openMessageContextMenu(x, y, row) {
+    const menu = document.getElementById("message-context-menu");
+    if (!menu || !row) return;
+    const msg = getMessageByRow(row);
+    if (!msg) return;
+
+    contextMenuRow = row;
+    const regenItem = menu.querySelector('[data-context-action="regenerate"]');
+    const speakItem = menu.querySelector('[data-context-action="speak"]');
+    if (regenItem) regenItem.hidden = !(msg.role === "bot" || msg.role === "image");
+    if (speakItem) speakItem.hidden = msg.role !== "bot";
+
+    menu.hidden = false;
+    menu.style.visibility = "hidden";
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+
+    const rect = menu.getBoundingClientRect();
+    const pad = 8;
+    let left = x;
+    let top = y;
+    if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad;
+    if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad;
+    menu.style.left = Math.max(pad, left) + "px";
+    menu.style.top = Math.max(pad, top) + "px";
+    menu.style.visibility = "visible";
+
+    const first = menu.querySelector("button:not([hidden])");
+    if (first) first.focus({ preventScroll: true });
+}
+
+function closeMessageContextMenu() {
+    const menu = document.getElementById("message-context-menu");
+    if (menu && !menu.hidden) {
+        menu.hidden = true;
+        menu.style.visibility = "";
+    }
+    contextMenuRow = null;
+}
+
+function setupMessageContextMenu() {
+    const stream = document.getElementById("chat-stream");
+    const menu = document.getElementById("message-context-menu");
+    if (!stream || !menu) return;
+
+    // Masaüstü: sağ tık
+    stream.addEventListener("contextmenu", (e) => {
+        const row = e.target.closest(".message-row");
+        if (!row || !row.dataset.msgId) return;
+        e.preventDefault();
+        openMessageContextMenu(e.clientX, e.clientY, row);
+    });
+
+    // Dokunmatik: basılı tut
+    let pressTimer = null;
+    let pressStartX = 0;
+    let pressStartY = 0;
+    let pressedRow = null;
+    let longPressFired = false;
+
+    const cancelPress = () => {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+        pressedRow = null;
+    };
+
+    stream.addEventListener("touchstart", (e) => {
+        const row = e.target.closest(".message-row");
+        if (!row || !row.dataset.msgId || e.touches.length !== 1) return;
+        pressedRow = row;
+        longPressFired = false;
+        pressStartX = e.touches[0].clientX;
+        pressStartY = e.touches[0].clientY;
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+            if (!pressedRow) return;
+            longPressFired = true;
+            openMessageContextMenu(pressStartX, pressStartY, pressedRow);
+            try { if (navigator.vibrate) navigator.vibrate(15); } catch (err) {}
+        }, 520);
+    }, { passive: true });
+
+    stream.addEventListener("touchmove", (e) => {
+        if (!pressedRow || !e.touches.length) return;
+        const dx = Math.abs(e.touches[0].clientX - pressStartX);
+        const dy = Math.abs(e.touches[0].clientY - pressStartY);
+        if (dx > 10 || dy > 10) cancelPress();
+    }, { passive: true });
+
+    stream.addEventListener("touchend", (e) => {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+        if (longPressFired) {
+            e.preventDefault();
+            longPressFired = false;
+        }
+        pressedRow = null;
+    });
+
+    stream.addEventListener("touchcancel", cancelPress);
+
+    // Baloncuk altındaki hızlı eylemler
+    stream.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-msg-action]");
+        if (!btn) return;
+        const row = btn.closest(".message-row");
+        if (row) handleMessageAction(btn.dataset.msgAction, row);
+    });
+
+    menu.addEventListener("click", (e) => {
+        const item = e.target.closest("[data-context-action]");
+        if (!item || item.hidden) return;
+        const row = contextMenuRow;
+        const action = item.dataset.contextAction;
+        closeMessageContextMenu();
+        handleMessageAction(action, row);
+    });
+
+    document.addEventListener("click", (e) => {
+        if (!menu.hidden && !menu.contains(e.target)) closeMessageContextMenu();
+    }, true);
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeMessageContextMenu();
+    });
+    window.addEventListener("scroll", closeMessageContextMenu, true);
+    window.addEventListener("resize", closeMessageContextMenu);
 }
 
 // ============================================================
@@ -1253,11 +2000,11 @@ async function callDirectGroqResilient(messages) {
 // 10. SEND MESSAGE CONTROLLER
 // ============================================================
 
-async function sendMessage() {
+async function sendMessage(options = {}) {
+    const opts = (options && typeof options === "object") ? options : {};
     const input = document.getElementById("user-input");
-    if (!input) return;
 
-    const text = input.value.trim();
+    const text = String(opts.text != null ? opts.text : (input ? input.value : "")).trim();
     if (!text) return;
 
     if (chatBusy()) {
@@ -1265,7 +2012,8 @@ async function sendMessage() {
         return;
     }
 
-    input.value = "";
+    // Yeniden üretmede kullanıcı balonu tekrar basılmaz; metin dışarıdan gelir.
+    if (input && opts.text == null) input.value = "";
     rememberFromUserText(text);   // isim gibi bilgiler bu cihazda da (ücretsiz, anında) saklanır
     noteUserActivity(true);
     startKeepAlive();          // kullanıcı hareketi içinde başlatılmalı (ses politikası)
@@ -1275,15 +2023,15 @@ async function sendMessage() {
     if (text.startsWith("/görsel") || text.toLowerCase().startsWith("görsel oluştur")) {
         const prompt = text.replace(/^\/görsel|^görsel oluştur/i, "").trim();
         if (prompt) {
-            renderUserMessageElement(text);
+            if (!opts.skipUserEcho) renderUserMessageElement(text);
             await executeImageGeneration(prompt, selectedImageStyle, selectedImageRatio);
             return;
         }
     }
 
-    renderUserMessageElement(text);
+    if (!opts.skipUserEcho) renderUserMessageElement(text);
     const sid = currentSessionId;
-    const agentMode = currentAgentMode;
+    const agentMode = opts.agentMode || currentAgentMode;
 
     // Canlı akış tercihi açıkken: yanıtı harf harf akıt (start yazılım ekibinde kullanılmaz)
     if (prefs.streaming && agentMode !== "software" && !text.startsWith("/proje")) {
@@ -1586,6 +2334,11 @@ function openSettingsModal() {
         // Renk paleti aktif daire ve değerini güncelle
         applyAccentColor(currentAccentColor);
 
+        // Mod ortam müziği UI güncelle
+        if (window.LuminaModeAudioEngine) {
+            window.LuminaModeAudioEngine.updateUI();
+        }
+
         // GitHub Değişkeni / Variable durumu kontrolü
         const gitStatus = document.getElementById("github-var-status");
         if (gitStatus) {
@@ -1726,7 +2479,7 @@ function clearAuthError() {
 function setAuthError(message) {
     const box = document.getElementById("auth-error");
     if (!box) {
-        showToast("İşlem Başarısız", message, "error");
+        showToast("İşlem Başarısız", message);
         return;
     }
     box.innerText = message;
@@ -1773,11 +2526,26 @@ function translateAuthError(err) {
         case "auth/network-request-failed":
             return "Ağ bağlantısı kurulamadı. İnternet bağlantınızı kontrol edin.";
         case "auth/popup-closed-by-user":
-            return "Google ile giriş penceresi kapatıldı.";
+            return "Google ile giriş penceresi kapatıldı. Tekrar deneyebilirsiniz.";
         case "auth/popup-blocked":
             return "Google giriş penceresi tarayıcı tarafından engellendi. Açılır pencerelere izin verin.";
+        case "auth/cancelled-popup-request":
+            return "Google giriş isteği iptal edildi. Lütfen tekrar deneyin.";
+        case "auth/operation-not-supported-in-this-environment":
+            return "Bu ortamda açılır pencere ile giriş desteklenmiyor. Yönlendirme yöntemi denenecek.";
+        case "auth/unauthorized-domain":
+            return "Bu alan adı Firebase Console'da yetkili alan adları listesine eklenmemiş. " +
+                   "Google ile giriş için http://localhost:5500 adresini kullanın ve Firebase Console → Authentication → Settings → Authorized domains bölümüne ekleyin.";
+        case "auth/account-exists-with-different-credential":
+            return "Bu e-posta adresi farklı bir giriş yöntemiyle kayıtlı. Lütfen e-posta ile giriş yapın.";
+        case "auth/credential-already-in-use":
+            return "Bu Google hesabı başka bir Lumina hesabına bağlı.";
+        case "auth/missing-or-invalid-nonce":
+            return "Giriş doğrulaması tamamlanamadı. Sayfayı yenileyip tekrar deneyin.";
+        case "auth/internal-error":
+            return "Kimlik doğrulama servisinde geçici bir hata oluştu. Lütfen tekrar deneyin.";
         case "auth/operation-not-allowed":
-            return "Bu giriş yöntemi şu anda etkin değil. Lütfen farklı bir yöntem deneyin.";
+            return "Bu giriş yöntemi şu anda etkin değil. Firebase Console'da Google sağlayıcısını etkinleştirin veya farklı bir yöntem deneyin.";
         case "auth/too-many-requests":
             return "Çok fazla başarısız deneme yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.";
         default:
@@ -1850,13 +2618,78 @@ async function handleEmailRegister() {
 
 async function handleGoogleLogin() {
     if (!isFirebaseActive || !googleProvider) { continueAsGuest(); return; }
+
     clearAuthError();
+
+    if (window.location.protocol === "file:") {
+        setAuthError(
+            "Google ile giriş dosya (file://) üzerinden çalışmaz. " +
+            "Lütfen projeyi http://localhost:5500 adresinden açın."
+        );
+        return;
+    }
+
+    if (window.location.hostname === "127.0.0.1") {
+        showToast(
+            "Adres Önerisi",
+            "Google girişi için http://localhost:5500 adresini kullanmanız önerilir. 127.0.0.1 Firebase'de yetkili alan adı olmayabilir."
+        );
+    }
+
+    const googleBtn = document.querySelector('.auth-option-btn.google');
+    if (googleBtn) googleBtn.disabled = true;
+
     try {
         const cred = await auth.signInWithPopup(googleProvider);
         finishAuthSuccess("Google Girişi", `Hoş geldiniz, ${cred.user.displayName || cred.user.email}!`);
     } catch (e) {
+        const code = (e && e.code) || "";
+
+        // Popup engellendiği veya bu ortamda desteklenmediği durumda yönlendirmeye geç.
+        const redirectFallbackCodes = [
+            "auth/popup-blocked",
+            "auth/operation-not-supported-in-this-environment",
+            "auth/cancelled-popup-request"
+        ];
+
+        if (redirectFallbackCodes.includes(code)) {
+            try {
+                // Oturum bilgisi sayfa yenilenince korunur; redirect sonucu açılışta okunur.
+                if (auth.setPersistence && firebase.auth.Auth.Persistence) {
+                    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+                }
+                await auth.signInWithRedirect(googleProvider);
+                return;
+            } catch (re) {
+                setAuthError(translateAuthError(re));
+                return;
+            }
+        }
+
         setAuthError(translateAuthError(e));
+    } finally {
+        if (googleBtn) googleBtn.disabled = false;
     }
+}
+
+// Yönlendirme (redirect) ile dönen Google girişini tamamlar.
+function handleAuthRedirectResult() {
+    if (!isFirebaseActive || !auth || typeof auth.getRedirectResult !== "function") return;
+    auth.getRedirectResult()
+        .then((result) => {
+            if (result && result.user) {
+                finishAuthSuccess(
+                    "Google Girişi",
+                    `Hoş geldiniz, ${result.user.displayName || result.user.email}!`
+                );
+            }
+        })
+        .catch((err) => {
+            const code = (err && err.code) || "";
+            if (code && code !== "auth/no-auth-event") {
+                setAuthError(translateAuthError(err));
+            }
+        });
 }
 
 async function handleLogout() {
@@ -1936,18 +2769,100 @@ function toggleSpeechOutput() {
     }
 }
 
+// Metin içerisindeki tüm emojileri, kod bloklarını ve seslendirilmemesi gereken sembolleri temizler.
+// Böylece tarayıcı "gözlük adam emojisi", "gülen yüz", "parıltı" gibi Unicode açıklamalarını KESİNLİKLE SESLENDİRMEZ.
+function cleanTextForSpeech(text) {
+    if (!text) return "";
+    return text
+        // Markdown kod blokları ve formüller
+        .replace(/```[\s\S]*?```/g, "Kod bloğu.")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/\$\$[\s\S]*?\$\$/g, "Matematik formülü.")
+        .replace(/\$[^$]*\$/g, "")
+        // HTML etiketleri ve linkler
+        .replace(/<[^>]*>/g, "")
+        .replace(/https?:\/\/\S+/gi, "web bağlantısı")
+        // TÜM UNICODE EMOJİLER VE ÖZEL PİKTOGRAF ARALIKLARI (Böylece hiçbir emoji adı okunmaz)
+        .replace(/[\u{1F300}-\u{1FAD6}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{200D}\u{200C}]/gu, "")
+        // Tipografik semboller, işaretler ve parantezler
+        .replace(/[*_#~>\[\]\(\)\{\}\\|]/g, " ")
+        .replace(/[•●★☆✔✓✕✖✗©®™—–]/g, " ")
+        // Metin içi gülen suratlar :) :( :D vs.
+        .replace(/[:;=8]-?[)D(\/\\pP3*]/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+// Sistemdeki mevcut sesleri tarayarak seçili profile en uygun doğal / insansı sesi ve cinsiyeti belirler
+function findBestVoiceForProfile(profile) {
+    const allVoices = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+    if (!allVoices.length) {
+        return { voice: null, isFemaleVoice: profile.gender === "female" };
+    }
+
+    const isTargetFemale = profile.gender === "female";
+    const turkishVoices = allVoices.filter(v => v.lang && (v.lang.toLowerCase().startsWith("tr") || v.lang.toLowerCase().includes("tr")));
+
+    const femaleKeywords = ["emel", "filiz", "yelda", "dilara", "zeynep", "seda", "female", "girl", "kadın", "kız", "google"];
+    const maleKeywords = ["tolga", "ahmet", "cem", "can", "barış", "baris", "male", "boy", "erkek"];
+
+    // 1. Profilin preferredVoices listesinde belirtilen öncelikli sesler
+    const preferred = profile.preferredVoices || [];
+    for (const pref of preferred) {
+        const prefLower = pref.toLowerCase();
+        const matchTr = turkishVoices.find(v => v.name.toLowerCase().includes(prefLower));
+        if (matchTr) {
+            const isFem = femaleKeywords.some(k => matchTr.name.toLowerCase().includes(k));
+            return { voice: matchTr, isFemaleVoice: isFem };
+        }
+    }
+
+    // 2. Cinsiyete uygun Türkçe ses ara:
+    if (isTargetFemale) {
+        // En insansı: Online / Natural Türkçe Kadın sesi (örn: Microsoft Emel Online (Natural))
+        const naturalFemale = turkishVoices.find(v =>
+            femaleKeywords.some(k => v.name.toLowerCase().includes(k)) &&
+            (v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("online"))
+        );
+        if (naturalFemale) return { voice: naturalFemale, isFemaleVoice: true };
+
+        // Standart Türkçe Kadın sesi (Emel, Google Türkçe vb.)
+        const anyFemale = turkishVoices.find(v => femaleKeywords.some(k => v.name.toLowerCase().includes(k)));
+        if (anyFemale) return { voice: anyFemale, isFemaleVoice: true };
+    } else {
+        // En insansı: Online / Natural Türkçe Erkek sesi (örn: Microsoft Tolga Online (Natural))
+        const naturalMale = turkishVoices.find(v =>
+            maleKeywords.some(k => v.name.toLowerCase().includes(k)) &&
+            (v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("online"))
+        );
+        if (naturalMale) return { voice: naturalMale, isFemaleVoice: false };
+
+        // Standart Türkçe Erkek sesi (Tolga, Ahmet vb.)
+        const anyMale = turkishVoices.find(v => maleKeywords.some(k => v.name.toLowerCase().includes(k)));
+        if (anyMale) return { voice: anyMale, isFemaleVoice: false };
+    }
+
+    // 3. Hedef cinsiyet bulunamadıysa mevcut Türkçe seslerden al
+    if (turkishVoices.length > 0) {
+        const fallbackTr = turkishVoices[0];
+        const isFem = femaleKeywords.some(k => fallbackTr.name.toLowerCase().includes(k));
+        return { voice: fallbackTr, isFemaleVoice: isFem };
+    }
+
+    // 4. Genel global dillerdeki doğal seslerden dene
+    for (const pref of preferred) {
+        const globalMatch = allVoices.find(v => v.name.toLowerCase().includes(pref.toLowerCase()));
+        if (globalMatch) return { voice: globalMatch, isFemaleVoice: isTargetFemale };
+    }
+
+    return { voice: allVoices[0] || null, isFemaleVoice: isTargetFemale };
+}
+
 function speakText(text, opts = {}) {
     if ((!voiceEnabled && !opts.force) || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
 
-    const clean = text
-        .replace(/```[\s\S]*?```/g, "Kod bloğu.")
-        .replace(/\$\$[\s\S]*?\$\$/g, "Matematik formülü.")
-        .replace(/\$[^$]*\$/g, "")
-        .replace(/<[^>]*>/g, "")
-        .replace(/[*_#`~]/g, "")
-        .trim();
-
+    const clean = cleanTextForSpeech(text);
     if (!clean) {
         if (opts.onEnd) opts.onEnd();
         return;
@@ -1956,31 +2871,37 @@ function speakText(text, opts = {}) {
     const u = new SpeechSynthesisUtterance(clean);
     u.lang = "tr-TR";
 
-    const voiceKey = opts.voiceKey || currentSelectedVoice || "jenna";
+    const voiceKey = opts.voiceKey || currentSelectedVoice || (currentPersonality === "girly" ? "jenna" : currentPersonality === "boys" ? "tommy" : "jenna");
     const profile = VOICE_PROFILES[voiceKey] || VOICE_PROFILES["jenna"];
 
-    u.pitch = profile.pitch || 1.0;
-    u.rate = profile.rate || 1.0;
+    const voiceMatch = findBestVoiceForProfile(profile);
+    if (voiceMatch.voice) {
+        u.voice = voiceMatch.voice;
+    }
 
-    // Sistem seslerinden en uygununu bul (Kız sesleri Jenna vs. Erkek sesleri Tommy)
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-        const preferred = profile.preferredVoices || [];
-        let matchedVoice = voices.find(v => 
-            v.lang.startsWith("tr") && preferred.some(p => v.name.toLowerCase().includes(p))
-        );
-        if (!matchedVoice) {
-            matchedVoice = voices.find(v => v.lang.startsWith("tr"));
+    // Belirgin ve insansı ses ayrımı (Pitch ve Hız Modülasyonu):
+    // Sistemde sadece tek bir erkek sesi (Tolga vb.) olsa bile, kadın profillerinin frekansı
+    // kadın ses aralığına çıkarılır; böylece her profil gerçek anlamda farklı tınlar.
+    if (profile.gender === "female") {
+        if (voiceMatch.isFemaleVoice) {
+            u.pitch = profile.pitchFemale || 1.10;
+        } else {
+            // Erkek ses motoru kadın frekansına yükseltilir
+            u.pitch = profile.pitchMaleFallback || 1.38;
         }
-        if (!matchedVoice) {
-            matchedVoice = voices.find(v => preferred.some(p => v.name.toLowerCase().includes(p)));
-        }
-        if (matchedVoice) {
-            u.voice = matchedVoice;
+    } else {
+        if (voiceMatch.isFemaleVoice) {
+            // Kadın ses motoru erkek frekansına çekilir
+            u.pitch = profile.pitchFemaleFallback || 0.76;
+        } else {
+            u.pitch = profile.pitchMale || 0.88;
         }
     }
 
+    u.rate = profile.rate || 1.0;
+
     u.onstart = () => {
+        if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.duck();
         const orbWrapper = document.getElementById("voice-orb-wrapper");
         if (orbWrapper && isVoiceModeActive) {
             orbWrapper.classList.remove("listening", "thinking", "idle");
@@ -1990,6 +2911,7 @@ function speakText(text, opts = {}) {
     };
 
     const finishSpeech = () => {
+        if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.unduck();
         const orbWrapper = document.getElementById("voice-orb-wrapper");
         if (orbWrapper && isVoiceModeActive) {
             orbWrapper.classList.remove("speaking");
@@ -2071,6 +2993,10 @@ function openLiveVoiceMode() {
     voiceModeMuted = false;
     isVoiceModeProcessing = false;
 
+    if (window.LuminaModeAudioEngine) {
+        window.LuminaModeAudioEngine.onVoiceStart();
+    }
+
     const modal = document.getElementById("voice-mode-modal");
     if (modal) modal.style.display = "flex";
 
@@ -2093,6 +3019,10 @@ function closeLiveVoiceMode() {
     isVoiceModeActive = false;
     isVoiceModeProcessing = false;
     clearTimeout(voiceSilenceTimer);
+
+    if (window.LuminaModeAudioEngine) {
+        window.LuminaModeAudioEngine.onVoiceEnd();
+    }
 
     if (liveVoiceRecognition) {
         try { liveVoiceRecognition.stop(); } catch (e) {}
@@ -2444,7 +3374,7 @@ function deliverBotMessage(sid, text, agentMode = "general", opts = {}) {
         hideTypingIndicator();
         renderBotMessageElement(text, agentMode, true, opts);
     } else {
-        const entry = { role: "bot", text, agentMode };
+        const entry = { id: makeMessageId(), role: "bot", text, agentMode };
         if (opts.proactive) entry.proactive = true;
         session.messages.push(entry);
         saveChatSessions();
@@ -2459,7 +3389,7 @@ function deliverImageCard(sid, data) {
         hideTypingIndicator();
         renderImageCardElement(data, true);
     } else {
-        session.messages.push({ role: "image", imageData: data });
+        session.messages.push({ id: makeMessageId(), role: "image", imageData: data });
         saveChatSessions();
     }
     return true;
