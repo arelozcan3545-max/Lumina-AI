@@ -47,6 +47,24 @@ SUPPORTED_UI_TYPES = {
     "checklist",
     "progress_tracker",
     "data_table",
+    # Location / weather / route blocks. These are built by the backend
+    # from live provider data and are therefore server-only: the model is
+    # never allowed to invent them.
+    "location_results",
+    "weather_forecast",
+    "route_info",
+    "location_request",
+    "location_info",
+}
+
+# Types the AI model may emit itself. Server-only types are excluded so a
+# model can never fabricate coordinates, businesses or weather.
+SERVER_ONLY_UI_TYPES = {
+    "location_results",
+    "weather_forecast",
+    "route_info",
+    "location_request",
+    "location_info",
 }
 
 SMART_UI_TYPE_LABELS_TR = {
@@ -62,6 +80,11 @@ SMART_UI_TYPE_LABELS_TR = {
     "checklist": "Kontrol Listesi",
     "progress_tracker": "İlerleme Takibi",
     "data_table": "Veri Tablosu",
+    "location_results": "Yakın Mekânlar",
+    "weather_forecast": "Hava Durumu",
+    "route_info": "Yol Tarifi",
+    "location_request": "Konum İzni",
+    "location_info": "Konum Bilgisi",
 }
 
 
@@ -306,6 +329,166 @@ class DataTableData(StrictModel):
         return self
 
 
+# ------------------------------------------------------------
+# LOCATION / WEATHER / ROUTE SCHEMAS
+# All of these are produced by the backend from live provider
+# data. The model is never allowed to generate them.
+# ------------------------------------------------------------
+
+class PlaceItem(StrictModel):
+    id: Optional[str] = Field(default=None, max_length=120)
+    name: str = _bounded_text(160)
+    address: Optional[str] = Field(default=None, max_length=240)
+    rating: Optional[float] = Field(default=None, ge=0, le=5)
+    review_count: Optional[int] = Field(default=None, ge=0, le=100_000_000)
+    distance_km: Optional[float] = Field(default=None, ge=0, le=20_000)
+    price_level: Optional[str] = Field(default=None, max_length=40)
+    category_label: Optional[str] = Field(default=None, max_length=80)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    google_maps_url: Optional[str] = Field(default=None, max_length=800)
+    website: Optional[str] = Field(default=None, max_length=800)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    badge: Optional[str] = Field(default=None, max_length=40)
+
+
+class LocationResultsData(StrictModel):
+    category: str = _bounded_text(60)
+    category_label: str = _bounded_text(100)
+    location_label: Optional[str] = Field(default=None, max_length=160)
+    radius_m: Optional[int] = Field(default=None, ge=0, le=50_000)
+    source: Optional[str] = Field(default=None, max_length=120)
+    fetched_at: Optional[str] = Field(default=None, max_length=40)
+    places: List[PlaceItem] = Field(min_length=1, max_length=10)
+    nearest: List[PlaceItem] = Field(default_factory=list, max_length=10)
+    top_rated: List[PlaceItem] = Field(default_factory=list, max_length=10)
+    nearest_id: Optional[str] = Field(default=None, max_length=120)
+    top_rated_id: Optional[str] = Field(default=None, max_length=120)
+    best_match_id: Optional[str] = Field(default=None, max_length=120)
+    ranking_explanation: Optional[str] = Field(default=None, max_length=500)
+    notice: Optional[str] = Field(default=None, max_length=300)
+
+
+class WeatherNow(StrictModel):
+    time: Optional[str] = Field(default=None, max_length=32)
+    temperature: Optional[float] = Field(default=None, ge=-90, le=70)
+    apparent_temperature: Optional[float] = Field(default=None, ge=-90, le=70)
+    humidity: Optional[float] = Field(default=None, ge=0, le=100)
+    precipitation: Optional[float] = Field(default=None, ge=0, le=1000)
+    precipitation_probability: Optional[float] = Field(default=None, ge=0, le=100)
+    wind_speed: Optional[float] = Field(default=None, ge=0, le=1000)
+    condition: Optional[str] = Field(default=None, max_length=60)
+    icon: Optional[str] = Field(default=None, max_length=8)
+
+
+class WeatherHour(StrictModel):
+    time: str = _bounded_text(32)
+    temperature: Optional[float] = Field(default=None, ge=-90, le=70)
+    apparent_temperature: Optional[float] = Field(default=None, ge=-90, le=70)
+    precipitation_probability: Optional[float] = Field(default=None, ge=0, le=100)
+    precipitation: Optional[float] = Field(default=None, ge=0, le=1000)
+    wind_speed: Optional[float] = Field(default=None, ge=0, le=1000)
+    humidity: Optional[float] = Field(default=None, ge=0, le=100)
+    condition: Optional[str] = Field(default=None, max_length=60)
+    icon: Optional[str] = Field(default=None, max_length=8)
+
+
+class WeatherDay(StrictModel):
+    date: str = _bounded_text(10)
+    weekday: Optional[str] = Field(default=None, max_length=20)
+    condition: Optional[str] = Field(default=None, max_length=60)
+    icon: Optional[str] = Field(default=None, max_length=8)
+    temp_max: Optional[float] = Field(default=None, ge=-90, le=70)
+    temp_min: Optional[float] = Field(default=None, ge=-90, le=70)
+    apparent_max: Optional[float] = Field(default=None, ge=-90, le=70)
+    apparent_min: Optional[float] = Field(default=None, ge=-90, le=70)
+    precipitation_sum: Optional[float] = Field(default=None, ge=0, le=1000)
+    precipitation_probability: Optional[float] = Field(default=None, ge=0, le=100)
+    wind_speed_max: Optional[float] = Field(default=None, ge=0, le=1000)
+    sunrise: Optional[str] = Field(default=None, max_length=10)
+    sunset: Optional[str] = Field(default=None, max_length=10)
+    uv_index: Optional[float] = Field(default=None, ge=0, le=30)
+
+    @field_validator("date")
+    @classmethod
+    def _check_date(cls, v: str) -> str:
+        return _validate_iso_date(v)
+
+
+class WeatherForecastData(StrictModel):
+    location_label: str = _bounded_text(160)
+    timezone: Optional[str] = Field(default=None, max_length=80)
+    scope: Literal["current", "today", "tomorrow", "day_after", "week"] = "current"
+    current: Optional[WeatherNow] = None
+    hourly: List[WeatherHour] = Field(default_factory=list, max_length=24)
+    daily: List[WeatherDay] = Field(default_factory=list, max_length=7)
+    source: str = _bounded_text(120)
+    source_license: Optional[str] = Field(default=None, max_length=80)
+    fetched_at: Optional[str] = Field(default=None, max_length=40)
+    stale: bool = False
+    warning: Optional[str] = Field(default=None, max_length=300)
+
+
+class RouteStep(StrictModel):
+    instruction: str = _bounded_text(240)
+    distance_m: Optional[int] = Field(default=None, ge=0, le=5_000_000)
+    duration_seconds: Optional[int] = Field(default=None, ge=0, le=1_000_000)
+    travel_mode: Optional[str] = Field(default=None, max_length=20)
+
+
+class RoutePoint(StrictModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _round_public_coordinates(self):
+        # Route map blocks never need device-grade precision.
+        object.__setattr__(self, "latitude", round(float(self.latitude), 3))
+        object.__setattr__(self, "longitude", round(float(self.longitude), 3))
+        return self
+
+
+class RouteInfoData(StrictModel):
+    origin_label: str = _bounded_text(160)
+    destination_label: str = _bounded_text(160)
+    travel_mode: Optional[str] = Field(default=None, max_length=20)
+    travel_mode_label: Optional[str] = Field(default=None, max_length=40)
+    distance_km: Optional[float] = Field(default=None, ge=0, le=5_000)
+    duration_minutes: Optional[float] = Field(default=None, ge=0, le=100_000)
+    direct_distance_km: Optional[float] = Field(default=None, ge=0, le=5_000)
+    steps: List[RouteStep] = Field(default_factory=list, max_length=30)
+    origin: Optional[RoutePoint] = None
+    destination: Optional[RoutePoint] = None
+    encoded_polyline: Optional[str] = Field(default=None, max_length=6000)
+    google_maps_url: Optional[str] = Field(default=None, max_length=800)
+    source: Optional[str] = Field(default=None, max_length=120)
+    fetched_at: Optional[str] = Field(default=None, max_length=40)
+
+
+class LocationRequestData(StrictModel):
+    reason: str = _bounded_text(240)
+    permission_state: Literal["unset", "granted", "denied", "manual", "off"] = "unset"
+    allow_device: bool = True
+    suggested_cities: List[str] = Field(default_factory=list, max_length=6)
+
+
+class LocationInfoData(StrictModel):
+    label: str = _bounded_text(160)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    source: Literal["device", "manual_city", "place"] = "manual_city"
+    precision_meters: Optional[int] = Field(default=None, ge=0, le=50_000)
+    permission: Optional[str] = Field(default=None, max_length=20)
+    note: Optional[str] = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def _round_public_coordinates(self):
+        # Public blocks never carry device-grade precision.
+        object.__setattr__(self, "latitude", round(float(self.latitude), 3))
+        object.__setattr__(self, "longitude", round(float(self.longitude), 3))
+        return self
+
+
 SCHEMA_REGISTRY: Dict[str, Type[StrictModel]] = {
     "calculator": CalculatorData,
     "task_manager": TaskManagerData,
@@ -319,6 +502,11 @@ SCHEMA_REGISTRY: Dict[str, Type[StrictModel]] = {
     "checklist": ChecklistData,
     "progress_tracker": ProgressTrackerData,
     "data_table": DataTableData,
+    "location_results": LocationResultsData,
+    "weather_forecast": WeatherForecastData,
+    "route_info": RouteInfoData,
+    "location_request": LocationRequestData,
+    "location_info": LocationInfoData,
 }
 
 
@@ -360,6 +548,11 @@ Desteklenen tipler ve veri şemaları (şemaya birebir uy; fazladan alan ekleme)
 10. checklist: {"items": [{"text": "Sunumu hazırla", "done": false}, {"text": "Toplantı linkini gönder", "done": true}]}
 11. progress_tracker: {"goals": [{"label": "Kitap okuma", "current": 120, "target": 300, "unit": "sayfa"}]}  // target > 0
 12. data_table: {"columns": ["Ürün", "Adet", "Fiyat"], "rows": [["Kalem", "2", "40 TL"]], "caption": "Sipariş özeti"}
+
+KONUM / HAVA / YOL TARİFİ BLOKLARI (YALNIZCA SUNUCU ÜRETİR):
+- location_results, weather_forecast, route_info, location_request ve location_info tipleri canlı sağlayıcı verisinden backend tarafından eklenir.
+- Bu tipleri SEN ÜRETME. Kullanıcı hava durumu, yakın mekân veya yol tarifi isterse yalnızca doğal dille yanıtla; canlı veri bloğu sunucu tarafından eklenir.
+- Konum, işletme, puan, mesafe veya hava tahmini UYDURMA. Veri yoksa bunu açıkça söyle.
 
 KESİN GÜVENLİK KURALLARI:
 - JSON dışında hiçbir şey yazma; HTML, <script>, JavaScript, olay işleyicisi (onclick vb.) veya çalıştırılabilir kod ASLA üretme.
@@ -485,8 +678,12 @@ SMART_UI_REGEX = re.compile(r"```smart-ui\s*([\s\S]*?)\s*```", re.IGNORECASE)
 _ANY_FENCE_LEFTOVER_RE = re.compile(r"```(?:\s|\n)*$")
 
 
-def extract_smart_ui_blocks(text: str) -> List[Dict[str, Any]]:
-    """Metindeki smart-ui bloklarını güvenle ayrıştırır, doğrular ve sınırlar."""
+def extract_smart_ui_blocks(text: str, *, include_server_only: bool = False) -> List[Dict[str, Any]]:
+    """Metindeki smart-ui bloklarını güvenle ayrıştırır, doğrular ve sınırlar.
+
+    Server-only types (location/weather/route) are rejected unless the caller
+    explicitly opts in, so a model can never fabricate live data.
+    """
     if not text or not isinstance(text, str):
         return []
 
@@ -506,8 +703,11 @@ def extract_smart_ui_blocks(text: str) -> List[Dict[str, Any]]:
         except (json.JSONDecodeError, TypeError, ValueError):
             continue
         block, _errors = validate_smart_ui_block(raw)
-        if block:
-            blocks.append(block)
+        if not block:
+            continue
+        if not include_server_only and block["type"] in SERVER_ONLY_UI_TYPES:
+            continue
+        blocks.append(block)
     return blocks
 
 

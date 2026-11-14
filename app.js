@@ -9,26 +9,94 @@
 // ============================================================
 
 // Kendi backend'inizi bir sunucuya (Render/Railway/VPS vb.) dağıttıysanız
-// adresini buraya girin. Boş bırakılırsa: yerelde (localhost) çalışırken
-// otomatik olarak 127.0.0.1:8000 kullanılır; canlı bir domainde (ör. GitHub
-// Pages) ise backend adresi bilinmediğinden kullanıcı Ayarlar menüsünden
-// kendi Groq API anahtarını girene kadar sunucusuz mod kullanılır. Bu ayrım
-// olmadan önceki sürüm, canlıdaki HERKESİ otomatik olarak "önce localhost'a
-// bağlanmayı dene, o da olmazsa anahtar iste" akışına sokuyordu — bu yüzden
-// gerçek ziyaretçiler için dahili kota hiç devreye girmiyordu.
+// HTTPS adresini buraya girin (örn: "https://lumina-backend.onrender.com/api/v1").
+//
+// GÜVENLİK/ÜRETİM KURALI:
+//   - Yerel geliştirmede (localhost / file:) 127.0.0.1:8000 kullanılır.
+//   - Üretimde (GitHub Pages) backend adresi tanımlı değilse localhost'a
+//     İSTEK ATILMAZ. Bu adres boş kalır ve uygulama açıkça "backend yok"
+//     durumuna düşer. Uydurma bir adres asla üretilmez.
+//   - Üretimde yalnızca HTTPS kabul edilir; http:// ve localhost reddedilir.
 const DEPLOYED_BACKEND_URL = ""; // örn: "https://lumina-backend.onrender.com/api/v1"
 
-function resolveDefaultBackendUrl() {
-    const isLocalHost = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) ||
-        window.location.protocol === "file:";
-    if (isLocalHost) return "http://127.0.0.1:8000/api/v1";
-    return DEPLOYED_BACKEND_URL || "http://127.0.0.1:8000/api/v1";
+function isLocalRuntime() {
+    const host = window.location.hostname;
+    return ["localhost", "127.0.0.1", ""].includes(host) ||
+        window.location.protocol === "file:" ||
+        window.location.protocol === "capacitor:";
 }
 
-let backendUrl = localStorage.getItem("lumina_backend_url") || resolveDefaultBackendUrl();
+function sanitizeBackendUrl(url) {
+    const value = String(url || "").trim().replace(/\/+$/, "");
+    if (!value || !/^https?:\/\//i.test(value)) return "";
+    if (!isLocalRuntime()) {
+        // Üretimde localhost'a veya şifrelenmemiş HTTP'ye asla istek atılmaz.
+        if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(value)) return "";
+        if (value.toLowerCase().startsWith("http://")) return "";
+    }
+    return value;
+}
+
+function resolveDefaultBackendUrl() {
+    if (isLocalRuntime()) return "http://127.0.0.1:8000/api/v1";
+    // Üretimde gerçek HTTPS backend adresi yoksa BOŞ döner.
+    return sanitizeBackendUrl(DEPLOYED_BACKEND_URL);
+}
+
+let backendUrl = sanitizeBackendUrl(localStorage.getItem("lumina_backend_url")) || resolveDefaultBackendUrl();
+
+// Eski sürümden kalan geçersiz/localhost adresi üretimde temizle.
+if (typeof localStorage !== "undefined" && !sanitizeBackendUrl(localStorage.getItem("lumina_backend_url"))) {
+    try { localStorage.removeItem("lumina_backend_url"); } catch (e) { /* yoksay */ }
+}
+
 let directGeminiKey = localStorage.getItem("lumina_direct_gemini_key") || "";
 let directGroqKey = localStorage.getItem("lumina_direct_groq_key") || "";
 let directGitHubToken = localStorage.getItem("lumina_github_token") || "";
+
+/** Backend gerçekten yapılandırılmış mı? (Üretimde localhost asla sayılmaz.) */
+function hasBackend() {
+    return Boolean(backendUrl && /^https?:\/\//i.test(backendUrl));
+}
+
+/** Sohbet isteklerine eklenecek, izin verilmiş konum yükü (yoksa null). */
+function getChatLocationPayload() {
+    try {
+        if (typeof window === "undefined" || !window.LuminaLocation) return null;
+        return window.LuminaLocation.getChatLocationPayload() || null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/** İstemcinin gerçek saat dilimi ve UTC ofseti (dakika). */
+function getClientTimeContext() {
+    try {
+        if (typeof Intl === "undefined" || !Intl.DateTimeFormat) return {};
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        const offset = -new Date().getTimezoneOffset();
+        return {
+            client_timezone: timeZone,
+            client_timezone_offset_minutes: Number.isFinite(offset) ? offset : null
+        };
+    } catch (e) {
+        return {};
+    }
+}
+
+/** Backend yoksa kullanıcıya açık, yanıltıcı olmayan bir mesaj gösterir. */
+function requireBackend(actionLabel) {
+    if (hasBackend()) return true;
+    showToast(
+        "Sunucu Bağlantısı Yok",
+        `${actionLabel} için gerçek bir HTTPS backend adresi gerekiyor. ` +
+        "Bu sürüm uydurma veya localhost adresine istek atmaz. " +
+        "Yönetici backend'i yayına alana kadar sohbet cihaz üzerinde (kendi API anahtarınızla) çalışır.",
+        null,
+        9000
+    );
+    return false;
+}
 
 // Config.js & GitHub Variables Otomatik Algılama
 if (typeof window !== "undefined") {
@@ -36,7 +104,9 @@ if (typeof window !== "undefined") {
         if (!directGeminiKey && window.LUMINA_CONFIG.GEMINI_API_KEY) directGeminiKey = window.LUMINA_CONFIG.GEMINI_API_KEY;
         if (!directGroqKey && window.LUMINA_CONFIG.GROQ_API_KEY) directGroqKey = window.LUMINA_CONFIG.GROQ_API_KEY;
         if (!directGitHubToken && window.LUMINA_CONFIG.GITHUB_TOKEN) directGitHubToken = window.LUMINA_CONFIG.GITHUB_TOKEN;
-        if (!localStorage.getItem("lumina_backend_url") && window.LUMINA_CONFIG.BACKEND_URL) backendUrl = window.LUMINA_CONFIG.BACKEND_URL;
+        if (!localStorage.getItem("lumina_backend_url") && window.LUMINA_CONFIG.BACKEND_URL) {
+            backendUrl = sanitizeBackendUrl(window.LUMINA_CONFIG.BACKEND_URL) || backendUrl;
+        }
     }
     if (window.ENV) {
         if (!directGeminiKey && window.ENV.GEMINI_API_KEY) directGeminiKey = window.ENV.GEMINI_API_KEY;
@@ -51,22 +121,72 @@ let currentSelectedVoice = localStorage.getItem("lumina_selected_voice") || "jen
 let currentAccentColor = localStorage.getItem("lumina_accent_color") || "#3b82f6";
 
 // ============================================================
-// KALICI MİSAFİR KİMLİĞİ (GÜÇLÜ HAFIZA İÇİN)
+// KALICI MİSAFİR KİMLİĞİ (SUNUCU TARAFINDAN İMZALANIR)
 // ============================================================
+// İstemci yalnızca kendi yerel kimliğini üretir. Sunucu bu kimliği HMAC ile
+// imzalar; imzasız `guest_*` değerleri sunucu tarafından REDDEDİLİR.
+const GUEST_ID_KEY = "lumina_guest_id";
+const GUEST_TOKEN_KEY = "lumina_guest_token";
+
+let guestTokenCache = (() => {
+    try { return localStorage.getItem(GUEST_TOKEN_KEY) || ""; } catch (e) { return ""; }
+})();
+let guestTokenPending = null;
+
 function getGuestId() {
-    let id = localStorage.getItem("lumina_guest_id");
+    let id = localStorage.getItem(GUEST_ID_KEY);
     if (!id) {
         const raw = (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
         id = `guest_${raw.replace(/[^A-Za-z0-9\-]/g, "").slice(0, 48)}`;
-        localStorage.setItem("lumina_guest_id", id);
+        localStorage.setItem(GUEST_ID_KEY, id);
     }
     return id;
 }
 
+async function requestSignedGuestToken() {
+    if (!hasBackend()) return "";
+    const res = await fetch(`${backendUrl}/auth/guest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guest_id: getGuestId() })
+    });
+    if (!res.ok) throw new Error(`Misafir oturumu açılamadı (HTTP ${res.status}).`);
+    const data = await res.json().catch(() => ({}));
+    if (!data || typeof data.token !== "string" || !data.token.includes(".")) {
+        throw new Error("Misafir oturum jetonu geçersiz.");
+    }
+    guestTokenCache = data.token;
+    try { localStorage.setItem(GUEST_TOKEN_KEY, guestTokenCache); } catch (e) { /* yoksay */ }
+    return guestTokenCache;
+}
+
+function invalidateGuestToken() {
+    guestTokenCache = "";
+    guestTokenPending = null;
+    try { localStorage.removeItem(GUEST_TOKEN_KEY); } catch (e) { /* yoksay */ }
+}
+
 async function getAuthToken() {
-    return (isFirebaseActive && auth && auth.currentUser)
-        ? await auth.currentUser.getIdToken()
-        : getGuestId();
+    if (isFirebaseActive && auth && auth.currentUser) {
+        return await auth.currentUser.getIdToken();
+    }
+    if (guestTokenCache) return guestTokenCache;
+    if (!hasBackend()) return getGuestId();
+
+    if (!guestTokenPending) {
+        guestTokenPending = requestSignedGuestToken()
+            .catch((err) => {
+                console.warn("İmzalı misafir jetonu alınamadı:", err);
+                // Sunucu yoksa yerel kimlikle devam et; sunucu varsa istek 401 döner
+                // ve kullanıcıya açık hata gösterilir.
+                return "";
+            })
+            .then((token) => {
+                guestTokenPending = null;
+                return token || getGuestId();
+            });
+    }
+    return await guestTokenPending;
 }
 
 // Firebase Yapılandırması (lumina-ai-a42e0 Projesi)
@@ -135,9 +255,23 @@ document.addEventListener("DOMContentLoaded", () => {
     setupSpeechRecognition();
     initBackgroundFeatures();   // tercihler, bildirimler, arka plan işleri, kendiliğinden yazma
     loadFileFormatCatalog();    // desteklenen dosya türleri ve gerçek yükleme sınırı
+    initVoiceEngine();          // gerçek/benzersiz ses atamaları + bulut TTS kataloğu
     setupMessageContextMenu();  // sağ tık / basılı tut menüsü
     syncSidebarViewport();
     window.addEventListener("resize", syncSidebarViewport);
+
+    // Konum zekâsı arayüzü: izin, şehir ve harita. Backend yoksa
+    // yalnızca açık "sunucu gerekli" mesajı gösterilir; sahte veri yok.
+    if (window.LuminaLocation && typeof window.LuminaLocation.configure === "function") {
+        window.LuminaLocation.configure({
+            getBackendUrl: () => (hasBackend() ? backendUrl : ""),
+            getToken: () => getAuthToken(),
+            onReady: () => {
+                if (typeof fetchAndDisplayQuota === "function") fetchAndDisplayQuota();
+            }
+        });
+        window.LuminaLocation.init().catch(() => { /* sessizce geç */ });
+    }
 
     // Kullanıcı ilk etkileşiminde Web Audio kilidini güvenle aç
     const unlockAudio = () => {
@@ -259,6 +393,13 @@ async function fetchAndDisplayMemory() {
     const local = loadLocalMemory();
     const localLines = formatMemoryLines(local.name, local.facts);
 
+    if (!hasBackend()) {
+        box.innerText = localLines.length
+            ? localLines.join("\n") + "\n\n(Bu cihazda saklanıyor — sunucu bağlantısı yok)"
+            : "Henüz kalıcı bir hafızam yok. Sohbet ettikçe seni tanıyacağım.";
+        return;
+    }
+
     try {
         const token = await getAuthToken();
         const res = await fetch(`${backendUrl}/memory`, {
@@ -287,14 +428,16 @@ async function resetLuminaMemory() {
     }
     clearLocalMemory();
     let serverOk = false;
-    try {
-        const token = await getAuthToken();
-        const res = await fetch(`${backendUrl}/memory`, {
-            method: "DELETE",
-            headers: { "Authorization": `Bearer ${token}` }
-        });
-        serverOk = res.ok;
-    } catch (e) { /* backend yok */ }
+    if (hasBackend()) {
+        try {
+            const token = await getAuthToken();
+            const res = await fetch(`${backendUrl}/memory`, {
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            serverOk = res.ok;
+        } catch (e) { /* backend yok */ }
+    }
     showToast("Hafıza sıfırlandı", serverOk
         ? "Lumina seni baştan tanıyacak."
         : "Bu cihazdaki hafıza silindi. (Sunucuya ulaşılamadı.)");
@@ -303,6 +446,11 @@ async function resetLuminaMemory() {
 
 // Fetch quota from backend and update UI
 async function fetchAndDisplayQuota() {
+    if (!hasBackend()) {
+        // Sunucu yok: uydurma kota gösterilmez, yerel varsayılan gösterilir.
+        updateQuotaDisplay(quotaState);
+        return;
+    }
     try {
         const token = await getAuthToken();
         const res = await fetch(`${backendUrl}/quota`, {
@@ -871,68 +1019,189 @@ function selectPersonality(type) {
 // SES PROFİLLERİ (JENNA, TOMMY VB.)
 // ============================================================
 
+// ------------------------------------------------------------
+// SES PROFİLİ METADATASI
+// ------------------------------------------------------------
+// NOT: Burada YALNIZCA görünen ad, cinsiyet, kişilik ve önizleme metni
+// tutulur. Ses seçimi, gerçek sağlayıcı ses kimlikleri ve benzersizlik
+// denetimi `voice_engine.js` içindedir.
+//
+// Pitch ile "farklı konuşmacı" taklidi KALDIRILDI. Aynı sağlayıcı ses
+// kimliği iki farklı profile atanmaz; cihazda yeterli benzersiz ses yoksa
+// profil "kullanılamıyor" olarak gösterilir.
 const VOICE_PROFILES = {
     "jenna": {
         name: "Jenna",
         gender: "female",
         persona: "Canlı, Tatlı & Neşeli",
-        pitchFemale: 1.15,
-        pitchMaleFallback: 1.40,
         rate: 1.05,
-        preferredVoices: ["emel online", "natural", "google türkçe", "emel", "filiz", "yelda", "samantha", "victoria"],
         previewText: "Merhaba! Ben Jenna. Cıvıl cıvıl ve enerjik bir kadın sesiyim. Seninle sohbet etmek harika!"
     },
     "emma": {
         name: "Emma",
         gender: "female",
         persona: "Sakin, Sıcak & Huzurlu",
-        pitchFemale: 0.96,
-        pitchMaleFallback: 1.22,
-        rate: 0.88,
-        preferredVoices: ["filiz", "emel online", "google türkçe", "emel", "yelda", "karen"],
+        rate: 0.92,
         previewText: "Selam. Ben Emma. Sakin, dinlendirici ve huzurlu bir kadın sesiyim. Aklındakileri rahatça paylaşabilirsin."
     },
     "elif": {
         name: "Elif",
         gender: "female",
         persona: "Akıcı & Doğal Türkçe",
-        pitchFemale: 1.06,
-        pitchMaleFallback: 1.30,
         rate: 1.0,
-        preferredVoices: ["google türkçe", "emel online", "yelda", "filiz", "emel", "tr-tr"],
-        previewText: "Merhaba, ben Elif! Çok net, berrak ve akıcı bir Türkçe diksiyonuyla sana yardımcı olmaktan mutluluk duyarım."
+        previewText: "Merhaba, ben Elif! Çok net, berrak ve akıcı bir Türkçe diksiyonuyla size yardımcı olmaktan mutluluk duyarım."
     },
     "tommy": {
         name: "Tommy",
         gender: "male",
         persona: "Dinamik, Genç & Hızlı",
-        pitchFemaleFallback: 0.82,
-        pitchMale: 0.98,
-        rate: 1.10,
-        preferredVoices: ["tolga online", "natural", "ahmet", "cem", "tolga", "guy", "david"],
+        rate: 1.08,
         previewText: "Selam dostum! Ben Tommy. Hızlı, dinamik ve enerjik bir erkek sesiyim. Hadi hemen başlayalım!"
     },
     "david": {
         name: "David",
         gender: "male",
         persona: "Tok, Karizmatik & Derin",
-        pitchFemaleFallback: 0.70,
-        pitchMale: 0.74,
-        rate: 0.90,
-        preferredVoices: ["ahmet", "tolga online", "tolga", "cem", "george"],
-        previewText: "İyi günler. Ben David. Tok, derin ve net bir erkek sesiyle analitik çözümlerde yanındayım."
+        rate: 0.94,
+        previewText: "İyi günler. Ben David. Tok, derin ve net bir erkek sesiyle analitik çözümlerde yanınızdayım."
     },
     "baris": {
         name: "Barış",
         gender: "male",
         persona: "Samimi & Doğal Erkek",
-        pitchFemaleFallback: 0.76,
-        pitchMale: 0.88,
         rate: 1.0,
-        preferredVoices: ["tolga online", "tolga", "ahmet", "cem", "tr-tr"],
         previewText: "Selam! Ben Barış. Tıpkı karşılıklı konuşan yakın bir arkadaşın gibi doğal ve samimi bir erkek sesiyim."
     }
 };
+
+// ============================================================
+// SES MOTORU KÖPRÜSÜ (voice_engine.js)
+// ============================================================
+
+function voiceCallbacks(extra = {}) {
+    return {
+        onStart: () => {
+            if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.duck();
+            const orbWrapper = document.getElementById("voice-orb-wrapper");
+            if (orbWrapper && isVoiceModeActive) {
+                orbWrapper.classList.remove("listening", "thinking", "idle");
+                orbWrapper.classList.add("speaking");
+            }
+            if (extra.onStart) extra.onStart();
+        },
+        onEnd: () => {
+            if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.unduck();
+            const orbWrapper = document.getElementById("voice-orb-wrapper");
+            if (orbWrapper && isVoiceModeActive) orbWrapper.classList.remove("speaking");
+            if (extra.onEnd) extra.onEnd();
+        },
+        onError: (err) => {
+            if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.unduck();
+            const orbWrapper = document.getElementById("voice-orb-wrapper");
+            if (orbWrapper) orbWrapper.classList.remove("speaking");
+            if (extra.onError) extra.onError(err);
+            else {
+                showToast(
+                    "Ses Hatası",
+                    err && err.message ? err.message : "Ses üretilemedi. Lütfen farklı bir ses seçin.",
+                    null,
+                    9000
+                );
+            }
+        },
+        onFallback: (reason) => {
+            if (extra.onFallback) extra.onFallback(reason);
+            else showToast("Ses Değiştirildi", reason, null, 7000);
+        },
+        onState: extra.onState
+    };
+}
+
+async function initVoiceEngine() {
+    if (!window.LuminaVoice) {
+        console.warn("voice_engine.js yüklenmedi; ses işlevleri devre dışı.");
+        updateVoiceEngineStatus("Ses motoru yüklenemedi. Sayfayı yenileyin.", "error");
+        return;
+    }
+    updateVoiceEngineStatus("Ses yetenekleri taranıyor...", "loading");
+    try {
+        const state = await window.LuminaVoice.init({
+            getBackendUrl: () => (hasBackend() ? backendUrl : ""),
+            getToken: getAuthToken
+        });
+        if (state && state.preference && state.preference.profileId &&
+            VOICE_PROFILES[state.preference.profileId]) {
+            currentSelectedVoice = state.preference.profileId;
+            localStorage.setItem("lumina_selected_voice", currentSelectedVoice);
+        }
+        refreshVoiceCards();
+        const cloud = state && state.cloudConfigured ? state.cloudConfigured : {};
+        const cloudNames = [];
+        if (cloud.google) cloudNames.push("Google");
+        if (cloud.azure) cloudNames.push("Azure");
+        const browserCount = state && Number.isFinite(state.browserVoiceCount) ? state.browserVoiceCount : 0;
+        const summary = cloudNames.length
+            ? `Bulut TTS: ${cloudNames.join(", ")} • Tarayıcı sesi: ${browserCount}`
+            : `Bulut TTS yapılandırılmamış • Bu cihazdaki Türkçe ses: ${browserCount}`;
+        updateVoiceEngineStatus(summary, cloudNames.length ? "ok" : "warn");
+        if (state && Array.isArray(state.warnings)) {
+            state.warnings.forEach(w => console.info("Ses motoru:", w));
+        }
+    } catch (err) {
+        console.warn("Ses motoru başlatılamadı:", err);
+        updateVoiceEngineStatus(
+            "Ses motoru başlatılamadı. Tarayıcı sesleri kullanılamıyor olabilir.",
+            "error"
+        );
+        refreshVoiceCards();
+    }
+}
+
+function updateVoiceEngineStatus(text, kind) {
+    const el = document.getElementById("voice-engine-status");
+    if (!el) return;
+    el.textContent = text;
+    el.dataset.state = kind || "info";
+}
+
+function refreshVoiceCards() {
+    if (!window.LuminaVoice) return;
+    const profiles = window.LuminaVoice.getProfiles() || [];
+    profiles.forEach(p => {
+        const card = document.querySelector(`.voice-card[data-voice="${p.id}"]`);
+        if (!card) return;
+        const badge = card.querySelector(".voice-badge");
+        card.classList.toggle("voice-unavailable", !p.available);
+        if (!badge) return;
+        if (p.available) {
+            const active = (p.providers || []).find(x => x.available && x.provider !== "browser")
+                || (p.providers || []).find(x => x.available);
+            const label = active
+                ? (active.provider === "browser"
+                    ? `Tarayıcı: ${active.label}`
+                    : `${active.provider === "google" ? "Google" : "Azure"}: ${active.label}`)
+                : "Kullanılabilir";
+            badge.textContent = "Kullanılabilir";
+            badge.className = "voice-badge voice-badge-ok";
+            badge.title = label;
+        } else {
+            badge.textContent = "Bu cihazda yok";
+            badge.className = "voice-badge voice-badge-off";
+            badge.title = "Bu profil için ayrı bir Türkçe ses yok ve bulut TTS yapılandırılmamış. " +
+                "Pitch ile sahte farklılık üretilmez.";
+        }
+    });
+}
+
+async function retryVoiceEngine() {
+    if (!window.LuminaVoice) {
+        showToast("Ses Motoru Yok", "voice_engine.js yüklenemedi. Sayfayı yenileyin.", null, 8000);
+        return;
+    }
+    window.LuminaVoice.stop();
+    await initVoiceEngine();
+    showToast("Ses Motoru Yenilendi", "Cihazdaki sesler ve bulut TTS durumu yeniden tarandı.");
+}
 
 function selectVoiceOption(voiceKey) {
     if (!VOICE_PROFILES[voiceKey]) voiceKey = "jenna";
@@ -943,16 +1212,30 @@ function selectVoiceOption(voiceKey) {
         el.classList.toggle("active", el.dataset.voice === voiceKey);
     });
 
-    showToast("Ses Değiştirildi", `${VOICE_PROFILES[voiceKey].name} (${VOICE_PROFILES[voiceKey].persona}) aktif edildi.`);
+    const profile = VOICE_PROFILES[voiceKey];
+    showToast("Ses Değiştirildi", `${profile.name} (${profile.persona}) seçildi.`);
 
-    // Seçilen sesi anında dinleterek farkı hissettir
+    if (window.LuminaVoice) {
+        window.LuminaVoice.setPreference(voiceKey).catch(() => {});
+    }
     previewVoice(voiceKey);
 }
 
 function previewVoice(voiceKey) {
     const prof = VOICE_PROFILES[voiceKey];
     if (!prof) return;
-    speakText(prof.previewText, { voiceKey, force: true });
+    if (!window.LuminaVoice) {
+        showToast(
+            "Ses Motoru Yüklenemedi",
+            "voice_engine.js yüklenmediği için ses üretilemiyor. Sayfayı yenileyip tekrar deneyin.",
+            null,
+            8000
+        );
+        return;
+    }
+    window.LuminaVoice.preview(voiceKey, voiceCallbacks()).catch((err) => {
+        showToast("Ses Hatası", err && err.message ? err.message : "Önizleme üretilemedi.", null, 9000);
+    });
 }
 
 function cycleTheme() {
@@ -2052,6 +2335,7 @@ async function sendMessage(options = {}) {
 
     // 1. Backend: arka plan işi (uygulama kapansa bile sunucuda devam eder)
     let backendReached = false;
+    if (hasBackend()) {
     try {
         const token = await getAuthToken();
         const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
@@ -2064,7 +2348,9 @@ async function sendMessage(options = {}) {
                 filename: currentAttachedDoc.filename,
                 excerpt: currentAttachedDoc.excerpt || currentAttachedDoc.preview || ""
             } : null,
-            conversation_id: String(currentSessionId || "default").slice(0, 64)
+            conversation_id: String(currentSessionId || "default").slice(0, 64),
+            location: getChatLocationPayload(),
+            ...getClientTimeContext()
         });
 
         let res = await fetch(`${backendUrl}/jobs/chat`, { method: "POST", headers, body });
@@ -2096,6 +2382,7 @@ async function sendMessage(options = {}) {
             return;
         }
         console.warn("Backend bağlantısı sağlanamadı, sunucusuz mod kontrol ediliyor...", backendError);
+    }
     }
 
     // 2. Sunucusuz mod: doğrudan Groq veya GitHub Models (geçmiş + KALICI HAFIZA + KİŞİLİK ile)
@@ -2221,6 +2508,7 @@ async function executeImageGeneration(prompt, style, ratio) {
 
     // Backend önce denenir — gerçek moderasyon (regex + LLM) yalnızca orada.
     let backendReached = false;
+    if (hasBackend()) {
     try {
         const token = await getAuthToken();
         const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
@@ -2260,6 +2548,7 @@ async function executeImageGeneration(prompt, style, ratio) {
             return;
         }
         console.warn("Backend görsel sunucusuna ulaşılamadı (gerçek ağ hatası), sınırlı client-side yedek deneniyor...", e);
+    }
     }
 
     // Buraya SADECE backend'e hiç ulaşılamadığında düşülür. LLM moderasyonu yok,
@@ -2373,8 +2662,20 @@ function saveSettings() {
     const gitInput = document.getElementById("setting-github-token");
 
     if (urlInput) {
-        backendUrl = urlInput.value.trim() || "http://127.0.0.1:8000/api/v1";
-        localStorage.setItem("lumina_backend_url", backendUrl);
+        const raw = urlInput.value.trim();
+        const sanitized = sanitizeBackendUrl(raw);
+        if (raw && !sanitized) {
+            showToast(
+                "Geçersiz Backend Adresi",
+                "Üretimde yalnızca HTTPS adresleri kabul edilir; localhost ve http:// reddedilir.",
+                null,
+                9000
+            );
+            return;
+        }
+        backendUrl = sanitized || resolveDefaultBackendUrl();
+        if (backendUrl) localStorage.setItem("lumina_backend_url", backendUrl);
+        else localStorage.removeItem("lumina_backend_url");
     }
     if (keyInput) {
         directGroqKey = keyInput.value.trim();
@@ -2764,8 +3065,8 @@ function toggleSpeechOutput() {
     if (btn) {
         btn.innerText = voiceEnabled ? "🔊" : "🔇";
     }
-    if (!voiceEnabled && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
+    if (!voiceEnabled && window.LuminaVoice) {
+        window.LuminaVoice.stop();
     }
 }
 
@@ -2793,136 +3094,51 @@ function cleanTextForSpeech(text) {
         .trim();
 }
 
-// Sistemdeki mevcut sesleri tarayarak seçili profile en uygun doğal / insansı sesi ve cinsiyeti belirler
+// ------------------------------------------------------------
+// ESKİ SES SEÇİCİ — KALDIRILDI
+// ------------------------------------------------------------
+// Önceki sürüm, cihazdaki TEK Türkçe sesi tüm profillere bağlıyor ve
+// ardından pitch değerini değiştirerek "farklı konuşmacı" izlenimi
+// veriyordu. Bu davranış tamamen kaldırıldı.
+//
+// Gerçek ses ataması `voice_engine.js` içindeki
+// `assignUniqueBrowserVoices()` tarafından yapılır: her profile farklı bir
+// voiceURI atanır, pitch DAİMA 1.0'dır ve yeterli benzersiz ses yoksa
+// profil "kullanılamıyor" olarak raporlanır.
 function findBestVoiceForProfile(profile) {
-    const allVoices = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
-    if (!allVoices.length) {
-        return { voice: null, isFemaleVoice: profile.gender === "female" };
-    }
-
-    const isTargetFemale = profile.gender === "female";
-    const turkishVoices = allVoices.filter(v => v.lang && (v.lang.toLowerCase().startsWith("tr") || v.lang.toLowerCase().includes("tr")));
-
-    const femaleKeywords = ["emel", "filiz", "yelda", "dilara", "zeynep", "seda", "female", "girl", "kadın", "kız", "google"];
-    const maleKeywords = ["tolga", "ahmet", "cem", "can", "barış", "baris", "male", "boy", "erkek"];
-
-    // 1. Profilin preferredVoices listesinde belirtilen öncelikli sesler
-    const preferred = profile.preferredVoices || [];
-    for (const pref of preferred) {
-        const prefLower = pref.toLowerCase();
-        const matchTr = turkishVoices.find(v => v.name.toLowerCase().includes(prefLower));
-        if (matchTr) {
-            const isFem = femaleKeywords.some(k => matchTr.name.toLowerCase().includes(k));
-            return { voice: matchTr, isFemaleVoice: isFem };
-        }
-    }
-
-    // 2. Cinsiyete uygun Türkçe ses ara:
-    if (isTargetFemale) {
-        // En insansı: Online / Natural Türkçe Kadın sesi (örn: Microsoft Emel Online (Natural))
-        const naturalFemale = turkishVoices.find(v =>
-            femaleKeywords.some(k => v.name.toLowerCase().includes(k)) &&
-            (v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("online"))
+    if (profile && profile.gender) {
+        console.info(
+            "findBestVoiceForProfile kullanımdan kaldırıldı; ses seçimi LuminaVoice tarafından yapılır."
         );
-        if (naturalFemale) return { voice: naturalFemale, isFemaleVoice: true };
-
-        // Standart Türkçe Kadın sesi (Emel, Google Türkçe vb.)
-        const anyFemale = turkishVoices.find(v => femaleKeywords.some(k => v.name.toLowerCase().includes(k)));
-        if (anyFemale) return { voice: anyFemale, isFemaleVoice: true };
-    } else {
-        // En insansı: Online / Natural Türkçe Erkek sesi (örn: Microsoft Tolga Online (Natural))
-        const naturalMale = turkishVoices.find(v =>
-            maleKeywords.some(k => v.name.toLowerCase().includes(k)) &&
-            (v.name.toLowerCase().includes("natural") || v.name.toLowerCase().includes("online"))
-        );
-        if (naturalMale) return { voice: naturalMale, isFemaleVoice: false };
-
-        // Standart Türkçe Erkek sesi (Tolga, Ahmet vb.)
-        const anyMale = turkishVoices.find(v => maleKeywords.some(k => v.name.toLowerCase().includes(k)));
-        if (anyMale) return { voice: anyMale, isFemaleVoice: false };
     }
-
-    // 3. Hedef cinsiyet bulunamadıysa mevcut Türkçe seslerden al
-    if (turkishVoices.length > 0) {
-        const fallbackTr = turkishVoices[0];
-        const isFem = femaleKeywords.some(k => fallbackTr.name.toLowerCase().includes(k));
-        return { voice: fallbackTr, isFemaleVoice: isFem };
-    }
-
-    // 4. Genel global dillerdeki doğal seslerden dene
-    for (const pref of preferred) {
-        const globalMatch = allVoices.find(v => v.name.toLowerCase().includes(pref.toLowerCase()));
-        if (globalMatch) return { voice: globalMatch, isFemaleVoice: isTargetFemale };
-    }
-
-    return { voice: allVoices[0] || null, isFemaleVoice: isTargetFemale };
+    return { voice: null, isFemaleVoice: Boolean(profile && profile.gender === "female") };
 }
 
 function speakText(text, opts = {}) {
-    if ((!voiceEnabled && !opts.force) || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
+    if (!voiceEnabled && !opts.force) return;
 
-    const clean = cleanTextForSpeech(text);
-    if (!clean) {
-        if (opts.onEnd) opts.onEnd();
+    if (!window.LuminaVoice) {
+        const err = new Error(
+            "Ses motoru (voice_engine.js) yüklenmedi. Ses üretilemiyor. Sayfayı yenileyin."
+        );
+        if (opts.onError) opts.onError(err);
         return;
     }
 
-    const u = new SpeechSynthesisUtterance(clean);
-    u.lang = "tr-TR";
+    const voiceKey = opts.voiceKey || currentSelectedVoice ||
+        (currentPersonality === "girly" ? "jenna" : currentPersonality === "boys" ? "tommy" : "jenna");
 
-    const voiceKey = opts.voiceKey || currentSelectedVoice || (currentPersonality === "girly" ? "jenna" : currentPersonality === "boys" ? "tommy" : "jenna");
-    const profile = VOICE_PROFILES[voiceKey] || VOICE_PROFILES["jenna"];
+    const result = window.LuminaVoice.speak(text, {
+        ...voiceCallbacks(opts),
+        profileId: voiceKey,
+        force: opts.force === true
+    });
 
-    const voiceMatch = findBestVoiceForProfile(profile);
-    if (voiceMatch.voice) {
-        u.voice = voiceMatch.voice;
+    if (result && typeof result.catch === "function") {
+        result.catch((err) => {
+            if (opts.onError) opts.onError(err);
+        });
     }
-
-    // Belirgin ve insansı ses ayrımı (Pitch ve Hız Modülasyonu):
-    // Sistemde sadece tek bir erkek sesi (Tolga vb.) olsa bile, kadın profillerinin frekansı
-    // kadın ses aralığına çıkarılır; böylece her profil gerçek anlamda farklı tınlar.
-    if (profile.gender === "female") {
-        if (voiceMatch.isFemaleVoice) {
-            u.pitch = profile.pitchFemale || 1.10;
-        } else {
-            // Erkek ses motoru kadın frekansına yükseltilir
-            u.pitch = profile.pitchMaleFallback || 1.38;
-        }
-    } else {
-        if (voiceMatch.isFemaleVoice) {
-            // Kadın ses motoru erkek frekansına çekilir
-            u.pitch = profile.pitchFemaleFallback || 0.76;
-        } else {
-            u.pitch = profile.pitchMale || 0.88;
-        }
-    }
-
-    u.rate = profile.rate || 1.0;
-
-    u.onstart = () => {
-        if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.duck();
-        const orbWrapper = document.getElementById("voice-orb-wrapper");
-        if (orbWrapper && isVoiceModeActive) {
-            orbWrapper.classList.remove("listening", "thinking", "idle");
-            orbWrapper.classList.add("speaking");
-        }
-        if (opts.onStart) opts.onStart();
-    };
-
-    const finishSpeech = () => {
-        if (window.LuminaModeAudioEngine) window.LuminaModeAudioEngine.unduck();
-        const orbWrapper = document.getElementById("voice-orb-wrapper");
-        if (orbWrapper && isVoiceModeActive) {
-            orbWrapper.classList.remove("speaking");
-        }
-        if (opts.onEnd) opts.onEnd();
-    };
-
-    u.onend = finishSpeech;
-    u.onerror = finishSpeech;
-
-    window.speechSynthesis.speak(u);
 }
 
 // -------------------------------------------------------------
@@ -3101,8 +3317,9 @@ async function processVoiceModeInput(text) {
         return;
     }
 
-    // 1. Önce Backend'i dene
+    // 1. Önce Backend'i dene (yalnızca gerçek backend varsa)
     let backendSuccess = false;
+    if (hasBackend()) {
     try {
         const token = await getAuthToken();
         const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
@@ -3110,7 +3327,9 @@ async function processVoiceModeInput(text) {
             message: text,
             agent_mode: "general",
             custom_groq_key: directGroqKey || directGitHubToken || null,
-            personality: currentPersonality
+            personality: currentPersonality,
+            location: getChatLocationPayload(),
+            ...getClientTimeContext()
         });
 
         const res = await fetch(`${backendUrl}/chat`, { method: "POST", headers, body });
@@ -3124,6 +3343,7 @@ async function processVoiceModeInput(text) {
         }
     } catch (e) {
         console.warn("Backend çağrısı başarısız, doğrudan yapay zeka motoruna geçiliyor...", e);
+    }
     }
 
     // 2. Doğrudan Groq veya GitHub Models API çağrısı
@@ -3408,7 +3628,10 @@ function handleChatOutcome(sid, agentMode, status, data) {
     if (status === 200) {
         const reply = data.reply || "";
         const ok = deliverBotMessage(sid, reply, data.agent_mode || agentMode, {
-            smartUI: Array.isArray(data.smart_ui) ? data.smart_ui : (data.smartUI || []),
+            // Sunucu yanıtı güvenilir kaynaktır; sunucu taraflı tipler kabul edilir.
+            smartUI: (Array.isArray(data.smart_ui) ? data.smart_ui : (data.smartUI || []))
+                .map(b => sanitizeClientSmartBlock(b, { allowServerOnly: true }))
+                .filter(Boolean),
             modelUsed: data.model_used || data.modelUsed || ""
         });
         if (data.quota) updateQuotaDisplay(data.quota); else fetchAndDisplayQuota();
@@ -3478,6 +3701,7 @@ async function handleImageOutcome(sid, status, data) {
 // ---------- iş takibi (polling) ----------
 
 async function pollJob(job) {
+    if (!hasBackend()) return;
     if (activePolls.has(job.id)) return;
     activePolls.add(job.id);
     const deadline = job.createdAt + JOB_MAX_AGE_MS;
@@ -3811,6 +4035,7 @@ async function fetchProactiveMessage() {
         custom_groq_key: directGroqKey || null
     };
     try {
+        if (!hasBackend()) throw new Error("backend_yok");
         const token = await getAuthToken();
         const res = await fetch(`${backendUrl}/proactive`, {
             method: "POST",
@@ -4100,6 +4325,10 @@ let customPriceTimer = null;
 
 async function fetchPlansCatalog(force = false) {
     if (!force && plansCache.data && Date.now() - plansCache.ts < 600000) return plansCache.data;
+    if (!hasBackend()) {
+        plansCache = { data: { ...PLAN_DATA_FALLBACK }, ts: Date.now() };
+        return plansCache.data;
+    }
     try {
         const res = await fetch(`${backendUrl}/plans`, { cache: "no-store" });
         if (res.ok) {
@@ -4143,6 +4372,7 @@ function switchPlansTab(tab) {
 }
 
 async function fetchSubscriptionDetails() {
+    if (!hasBackend()) return;
     try {
         const token = await getAuthToken();
         const res = await fetch(`${backendUrl}/subscription`, {
@@ -4203,6 +4433,7 @@ function toClassBadge(pid) {
 }
 
 async function selectPlan(planId) {
+    if (!requireBackend("Paket seçimi")) return;
     showToast("Paket seçiliyor", "Sunucu onayı alınıyor...");
     try {
         const token = await getAuthToken();
@@ -4293,8 +4524,9 @@ async function onCustomSliderChange() {
 async function fetchCustomPrice() {
     const cfg = currentCustomConfig;
     let data = null;
-    try {
-        const res = await fetch(`${backendUrl}/plans/custom-calculate`, {
+    if (hasBackend()) {
+        try {
+            const res = await fetch(`${backendUrl}/plans/custom-calculate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -4309,6 +4541,7 @@ async function fetchCustomPrice() {
         });
         if (res.ok) data = await res.json();
     } catch (e) { /* yerel hesap yedeği */ }
+    }
     renderCustomBreakdown(data);
 }
 
@@ -4352,6 +4585,7 @@ function renderCustomBreakdown(data) {
 }
 
 async function selectCustomPlan() {
+    if (!requireBackend("Özel paket onayı")) return;
     const cfg = currentCustomConfig;
     showToast("Özel paket hazırlanıyor", "Sunucu onayı alınıyor...");
     try {
@@ -4397,6 +4631,7 @@ async function sendFamilyInvite() {
         showToast("Geçersiz E-posta", "Lütfen davet etmek için geçerli bir e-posta adresi girin.", null, 7000);
         return;
     }
+    if (!requireBackend("Üye daveti")) return;
     try {
         const token = await getAuthToken();
         const res = await fetch(`${backendUrl}/memberships/invite`, {
@@ -4436,6 +4671,7 @@ function renderFamilyMembers(members, maxMembers) {
 
 async function removeFamilyMember(email) {
     if (!email) return;
+    if (!requireBackend("Üye çıkarma")) return;
     if (!confirm(`${email} üyesini ekibinden çıkarmak istediğine emin misin?`)) return;
     try {
         const token = await getAuthToken();
@@ -4466,6 +4702,7 @@ let isUploadingDoc = false;
 let MAX_DOC_UPLOAD_MB = 25;
 
 async function loadFileFormatCatalog() {
+    if (!hasBackend()) return;
     try {
         const res = await fetch(`${backendUrl}/files/formats`);
         if (!res.ok) return;
@@ -4503,6 +4740,10 @@ async function handleDocUpload(event) {
         return;
     }
     if (isUploadingDoc) return;
+    if (!requireBackend("Belge analizi")) {
+        fileEl.value = "";
+        return;
+    }
     isUploadingDoc = true;
     showToast("Belge analiz ediliyor", `${file.name} işleniyor...`);
 
@@ -4683,8 +4924,50 @@ const SMART_UI_BUILDERS = {
     interactive_form: buildSmartInteractiveForm,
     checklist: buildSmartChecklist,
     progress_tracker: buildSmartProgressTracker,
-    data_table: buildSmartDataTable
+    data_table: buildSmartDataTable,
+    // Canlı konum/hava/rota blokları: yalnızca sunucu üretir ve
+    // location_ui.js içindeki güvenli DOM oluşturucularıyla çizilir.
+    location_results: buildSmartLocationResults,
+    weather_forecast: buildSmartWeatherForecast,
+    route_info: buildSmartRouteInfo,
+    location_request: buildSmartLocationRequest,
+    location_info: buildSmartLocationInfo
 };
+
+// Yalnızca SUNUCU tarafından üretilebilen tipler. Model çıktısındaki
+// aynı tipler istemcide reddedilir; böylece model koordinat, işletme,
+// hava durumu veya rota uyduramaz.
+const SERVER_ONLY_UI_TYPES = new Set([
+    "location_results",
+    "weather_forecast",
+    "route_info",
+    "location_request",
+    "location_info"
+]);
+
+// location_ui.js yüklenmemişse bu tipler sessizce atlanır (uydurma veri yok).
+function _locationUi() {
+    return (typeof window !== "undefined" && window.LuminaLocation) ? window.LuminaLocation : null;
+}
+
+function _mountLocationCard(block, card, factoryName) {
+    const ui = _locationUi();
+    if (!ui || typeof ui[factoryName] !== "function") {
+        const warn = document.createElement("div");
+        warn.className = "loc-warning";
+        warn.textContent = "Konum arayüzü yüklenemedi. Sayfayı yenilemeyi dene.";
+        card.appendChild(warn);
+        return;
+    }
+    const node = ui[factoryName](block);
+    if (node) card.appendChild(node);
+}
+
+function buildSmartLocationResults(block, card) { _mountLocationCard(block, card, "createLocationResults"); }
+function buildSmartWeatherForecast(block, card) { _mountLocationCard(block, card, "createWeatherForecast"); }
+function buildSmartRouteInfo(block, card) { _mountLocationCard(block, card, "createRouteInfo"); }
+function buildSmartLocationRequest(block, card) { _mountLocationCard(block, card, "createLocationRequest"); }
+function buildSmartLocationInfo(block, card) { _mountLocationCard(block, card, "createLocationInfo"); }
 
 function renderSmartUI(block, container) {
     if (!block || !block.type || !container) return null;
@@ -4730,7 +5013,12 @@ const SMART_UI_TYPE_LABELS = {
     interactive_form: "İnteraktif Form",
     checklist: "Kontrol Listesi",
     progress_tracker: "İlerleme Takibi",
-    data_table: "Veri Tablosu"
+    data_table: "Veri Tablosu",
+    location_results: "Yakın Mekânlar",
+    weather_forecast: "Hava Durumu",
+    route_info: "Yol Tarifi",
+    location_request: "Konum İzni",
+    location_info: "Konum Bilgisi"
 };
 
 function setSmartContextPrompt(text) {
@@ -5354,6 +5642,7 @@ function stopStreaming() {
 }
 
 async function tryStreamingSend(text, agentMode, sid) {
+    if (!hasBackend()) return false;
     if (!window.AbortController || typeof ReadableStream === "undefined") return false;
     if (chatBusy()) return false;
 
@@ -5400,7 +5689,9 @@ async function tryStreamingSend(text, agentMode, sid) {
                     filename: currentAttachedDoc.filename,
                     excerpt: currentAttachedDoc.excerpt || currentAttachedDoc.preview || ""
                 } : null,
-                conversation_id: String(currentSessionId || "default").slice(0, 64)
+                conversation_id: String(currentSessionId || "default").slice(0, 64),
+                location: getChatLocationPayload(),
+                ...getClientTimeContext()
             })
         });
 
@@ -5468,8 +5759,13 @@ async function tryStreamingSend(text, agentMode, sid) {
         row.remove();
         const parsedClient = parseClientSmartUIBlocks(fullText);
         const cleanText = parsedClient.clean || fullText;
+        // Güvenilir sunucu yanıtındaki bloklar (finalData.smart_ui) sunucu
+        // taraflı tipleri içerebilir; model metninden gelenler içeremez.
+        const serverBlocks = Array.isArray(finalData.smart_ui) && finalData.smart_ui.length
+            ? finalData.smart_ui.map(b => sanitizeClientSmartBlock(b, { allowServerOnly: true })).filter(Boolean)
+            : parsedClient.blocks.map(b => sanitizeClientSmartBlock(b)).filter(Boolean);
         deliverBotMessage(sid, cleanText, agentMode, {
-            smartUI: (finalData.smart_ui && finalData.smart_ui.length ? finalData.smart_ui : parsedClient.blocks).map(b => sanitizeClientSmartBlock(b)).filter(Boolean),
+            smartUI: serverBlocks,
             modelUsed: finalData.model_used || ""
         });
         if (finalData.quota) updateQuotaDisplay(finalData.quota);
@@ -5515,12 +5811,18 @@ function sessionStillExists() {
     return sessions.some(s => s.id === currentSessionId);
 }
 
-function sanitizeClientSmartBlock(block) {
+function sanitizeClientSmartBlock(block, options) {
     // Smart UI bloğu backend'de doğrulanır; frontend son savunma hattı olarak
     // yalnızca bilinen tipleri kabul eder ve beklenen alanları sınırlar.
+    //
+    // Canlı konum/hava/rota blokları YALNIZCA güvenilir sunucu yanıtından
+    // kabul edilir. Model çıktısından gelen aynı tipler (doğrudan Groq modu)
+    // reddedilir; böylece model koordinat/işletme/hava uyduramaz.
     if (!block || typeof block !== "object") return null;
+    const allowServerOnly = Boolean(options && options.allowServerOnly);
     const type = String(block.type || "").toLowerCase().slice(0, 40);
     if (!Object.prototype.hasOwnProperty.call(SMART_UI_BUILDERS, type)) return null;
+    if (!allowServerOnly && SERVER_ONLY_UI_TYPES.has(type)) return null;
     return {
         type: type,
         title: String(block.title || "").slice(0, 120),

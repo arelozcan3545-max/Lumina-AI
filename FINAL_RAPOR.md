@@ -2,9 +2,9 @@
 
 **Proje:** Lumina AI (`D:\LuminaStudios Software Company\Lumina AI`)
 **Android paketi:** `com.luminastudios.luminaai`
-**Rapor tarihi:** 7 Kasım 2026
-**Sürüm:** 3.2.0
-**Yedek:** `_BACKUP_20261104_231553` (değişiklik öncesi 12 kritik dosya)
+**Rapor tarihi:** 9 Kasım 2026
+**Sürüm:** 3.2.4 (bkz. ek rapor)
+**Yedekler:** `_BACKUP_20261104_231553`, `_BACKUP_UI_20261107_110634`, `_BACKUP_MODES_20261108_131308`, `_BACKUP_AUDIT_20261108_135901`, `_BACKUP_VOICE_API_20261109_113005`
 
 > **Test gerçeği:** Bu raporda "Completed and tested" yalnızca gerçekten çalıştırılan pytest/compileall, gerçek Node.js süreci, canlı yerel HTTP, canlı tarayıcı DOM testi, yeni giriş/kayıt arayüzü etkileşim testi ve Firebase web SDK/Auth uç noktası doğrulaması için kullanılmıştır. Gerçek Gemini/Groq/GitHub API anahtarı gerektiren entegrasyonlar canlı test edilmiş sayılmaz. Firebase hesap oluşturma, giriş/çıkış ve silme canlı test edildi; Google OAuth popup akışı gerçek Google hesabıyla uçtan uca canlı test edilmedi. "Şifremi Unuttum" akışı ürün kararıyla kaldırıldığı için parola sıfırlama testi kapsam dışıdır; e-posta doğrulama (gerçek e-posta gönderimi) canlı test edilmedi.
 
@@ -483,3 +483,355 @@ Hiçbir anahtar uydurulmadı; ücretli API varsayılan kapalı.
 4. Playwright + axe ile erişilebilirlik/responsive otomasyonu ekle.
 5. Fiziksel iOS/Android cihazda klavye ve safe-area davranışını doğrula.
 6. Git başlatılıp bu değişiklikler commit'lere ayrılsın.
+
+---
+
+# Ek Rapor — Ses Motoru, Güvenli API Havuzu ve Üretim Güvenliği (v3.2.4)
+
+**Tarih:** 9 Kasım 2026
+**Kapsam:** Gerçek/benzersiz konuşmacı sesleri, Groq anahtar havuzu, üretim backend/CORS güvenliği.
+**Yedek:** `_BACKUP_VOICE_API_20261109_113005` (54 dosya). Önceki yedekler korunmuştur.
+
+**Durum etiketleri:** `VERIFIED` (gerçekten çalıştırılarak doğrulandı), `IMPLEMENTED_NOT_VERIFIED` (kodlandı, canlı doğrulanmadı), `PARTIALLY_IMPLEMENTED`, `NOT_IMPLEMENTED`, `BLOCKED_BY_EXTERNAL_CONFIGURATION`, `FAILED`.
+
+---
+
+## 1. Kök Nedenler
+
+| Sorun | Kök neden | Onarım | Durum |
+|---|---|---|---|
+| Altı ses profili aynı konuşuyordu | `findBestVoiceForProfile` cihazdaki tek Türkçe sesi tüm profillere bağlıyor, ardından `pitch`/`rate` ile "farklı konuşmacı" taklidi yapıyordu | Ses seçimi merkezi kayıt defterine taşındı; her profile gerçek ve benzersiz sağlayıcı ses kimliği; pitch daima 1.0 | `VERIFIED` (birim test) / `IMPLEMENTED_NOT_VERIFIED` (gerçek cihaz) |
+| Sesler bazen hiç yüklenmiyordu | `speechSynthesis.getVoices()` boşken varsayılan sese düşülüyor, `voiceschanged` olayı beklenmiyordu | `waitForVoices()` + `voiceschanged` dinleyicisi + zaman aşımı | `IMPLEMENTED_NOT_VERIFIED` |
+| API anahtarı istemciye sızıyordu | Eski `assign_api.py` istemciden gelen `uid`'yi doğrulamadan kabul ediyor ve tam anahtarı HTTP yanıtında döndürüyordu | Router fabrikası yalnızca doğrulanmış oturumu kullanır; istemciye yalnızca `key_id`/`masked_key` döner | `VERIFIED` (birim test) |
+| Günlük kota yanlış sayılıyordu | Görsel kotası üretim başarısız olsa bile tüketiliyordu | Kota önce yalnızca doğrulanır (`commit=False`), başarıdan sonra `commit_quota_usage` ile tüketilir | `VERIFIED` (pytest) |
+| Üretimde localhost'a istek | `resolveDefaultBackendUrl()` üretimde de `http://127.0.0.1:8000` döndürüyordu | Üretimde HTTPS yoksa boş döner; `hasBackend()`/`requireBackend()` tüm kritik yolları korur | `VERIFIED` (statik + test) |
+| favicon 404 | Harici favicon dosyası yoktu | `index.html` içine gömülü SVG data-URI favicon + apple-touch-icon | `VERIFIED` (statik test) |
+| IP başına atama sınırı çalışmıyordu | Sayaç her kullanıcının kendi profilinde tutuluyordu; her yeni hesap sıfırdan başlıyordu | Merkezi `__system_ip_usage__` kaydı + kilitli atomik tüketim | `VERIFIED` (pytest) |
+| Havuz anahtarı kotayı atlıyordu | Tüm sunucu anahtarları "custom key" sayılıyordu | Yalnızca `source="user"` kotayı atlar; `pool`/`legacy` kota öder | `VERIFIED` (pytest) |
+
+## 2. İncelenen ve Değiştirilen Dosyalar
+
+**İncelenenler:** `main.py`, `app.js`, `index.html`, `api_allocation.py`, `assign_api.py`, `storage.py`, `models_provider.py`, `subscriptions.py`, `voice_registry.py`, `voice_tts.py`, `deployment_config.py`, `tests/`, `config.js`, `.env.example`.
+
+**Değiştirilenler / eklenenler:**
+
+| Dosya | Değişiklik |
+|---|---|
+| `main.py` | CORS tek blok ve üretim origin'i; HMAC misafir jetonu; `/auth/guest`, `/keys/me`, `/keys/assign`, `/keys/pool`, `/voice/catalog`, `/voice/preference`, `/voice/tts`; kota commit modeli; API havuzu entegrasyonu; sistem prompt güvenlik hiyerarşisi; sürüm 3.2.4 |
+| `api_allocation.py` | 20 anahtara kadar havuz, 5 kullanıcı/anahtar, `secrets` ağırlıklı seçim, yerel/Firestore atomik atama, maskeleme, sağlık/devre kesici, yeniden atama, merkezi IP günlük limiti |
+| `voice_registry.py` | 6 profil, benzersiz Google/Azure ses kimlikleri, sağlayıcı yapılandırma durumu, katalog ve doğrulama |
+| `voice_tts.py` | Google/Azure TTS adaptörleri, hata sınıflandırma, açık `fallback` tanılaması, pitch 0.0/0% |
+| `voice_engine.js` | `voiceschanged` bekleme, benzersiz tarayıcı sesi ataması, cinsiyet tahmini, pitch=1.0, bulut TTS, önbellek, iptal, önizleme, tercih senkronizasyonu |
+| `app.js` | Backend URL güvenliği (`sanitizeBackendUrl`, `hasBackend`, `requireBackend`), imzalı misafir jetonu, tüm kritik fetch guard'ları, ses motoru delegasyonu, `findBestVoiceForProfile` deprecated |
+| `index.html` | Gömülü favicon; ses kartı badge'leri; "Yeniden Tara"; `voice_engine.js` doğru sırada; sürüm 3.2.4; HTTPS backend örneği |
+| `assign_api.py` | Güvenli `build_assignment_router(verify_token)`; misafir 403; tam anahtar asla dönmez |
+| `deployment_config.py` | Üretim origin'i `https://arelozcan3545-max.github.io` ve yerel origin listesi |
+| `.env.example`, `config.example.js` | Havuz/TTS/güvenlik değişkenleri belgelendi; gerçek sır yazılmadı |
+| `tests/test_api_allocation.py`, `test_voice_registry.py`, `test_voice_tts.py`, `test_cors_production.py`, `test_frontend_production.py` | Yeni otomatik Python testleri |
+| `tests-js/voice_engine.test.mjs` | Ses motoru saf fonksiyon testleri |
+
+## 3. Değerlendirilen TTS Sağlayıcıları
+
+| Sağlayıcı | Türkçe sesler | Anahtar | Değerlendirme | Durum |
+|---|---|---|---|---|
+| Tarayıcı SpeechSynthesis | Cihaza bağlı (Emel, Filiz, Tolga, Ahmet, Google Türkçe vb.) | Gerekmez | Ücretsiz, çevrimdışı; envanter cihazdan cihaza değişir | `VERIFIED` (kod + birim test), `IMPLEMENTED_NOT_VERIFIED` (fiziksel cihaz) |
+| Google Cloud TTS | Standard A–E, Wavenet A–E | `GOOGLE_TTS_API_KEY` | Yüksek kaliteli, benzersiz 6 ses kimliği | `BLOCKED_BY_EXTERNAL_CONFIGURATION` |
+| Microsoft Azure Speech | `tr-TR-EmelNeural`, `tr-TR-AhmetNeural` | `AZURE_SPEECH_KEY` + bölge | Neural, yedek sağlayıcı | `BLOCKED_BY_EXTERNAL_CONFIGURATION` |
+
+- Gerçek ses kimlikleri: Jenna=`tr-TR-Wavenet-A`, Emma=`tr-TR-Wavenet-C`, Elif=`tr-TR-Wavenet-D`, Tommy=`tr-TR-Wavenet-B`, David=`tr-TR-Wavenet-E`, Barış=`tr-TR-Standard-B`.
+- Azure'da yalnızca iki Türkçe neural ses doğrulandığı için Azure yalnızca Jenna/Tommy için tanımlıdır; diğer profillerde Azure'da aynı sesi farklı konuşmacı gibi göstermek yerine kullanılmaz.
+- Pitch ile sahte farklılık, rastgele ses örneği ve sahte TTS **kaldırılmıştır**.
+
+## 4. Uygulanan Ses İşlevleri
+
+- Masaüstü/mobil aynı seçim mimarisi; seçim cihazdan bağımsız `localStorage` + hesap varsa sunucu tercihi.
+- Gerçek ve benzersiz konuşmacılar: aynı sağlayıcı ses kimliği iki profile atanmaz.
+- Doğal Türkçe: `lang=tr-TR`, `pitch=1.0` (bulut TTS'te `0.0`/`0%`), profil başına hız.
+- Önizleme, oynatma/durdurma, yükleme ve hata durumları, yeniden deneme.
+- Sağlayıcı hatasında **açık** geri dönüş: `fallback: true` + `fallback_reason`; sessizce farklı konuşmacıya geçilmez.
+- Cihazda yeterli benzersiz Türkçe ses yoksa profil "Bu cihazda yok" olarak işaretlenir.
+- Bakımı kolay kayıt defteri: `voice_registry.py` + `voice_engine.js` `DEFAULT_PROFILES`.
+- `/voice/catalog` yalnızca `configured: true` olan bulut sağlayıcıyı kullanılabilir sayar.
+
+## 5. API Atama Mimarisi
+
+- Anahtarlar yalnızca sunucu ortam değişkenlerinden okunur (`GROQ_KEY_01..20` / `GROQ_API_KEY_1..20`).
+- En fazla 20 anahtar; anahtar başına en fazla 5 farklı kullanıcı.
+- `secrets.randbelow` tabanlı kalan kapasiteye göre ağırlıklı, kriptografik güvenli seçim.
+- İlk girişte otomatik atama; sonraki oturumlarda aynı atama korunur.
+- Firestore varsa `api_assignments` + `api_key_usage` transaction; yoksa `LuminaStore.update_profile` altında kilitli atomik yerel atama.
+- İstemciye yalnızca `key_id`, `masked_key`, kapasite durumu döner; tam anahtar **asla** dönmez.
+- 401/403 alan anahtar geçersiz sayılır, devre dışı bırakılır ve kullanıcı güvenli şekilde yeniden atanır; sohbet geçmişi korunur.
+- Havuz dolunca Türkçe hata + yönetici kaydı (`pool_exhausted`).
+- Geçici hatalarda üstel geri çekilme, `Retry-After`, devre kesici ve sınırlı yeniden deneme uygulanır.
+- Havuz anahtarları yalnızca doğrulanmış Firebase hesaplarına atanır; misafirler paylaşılan legacy anahtar + günlük kota kullanır.
+- IP başına günlük yeni atama sınırı merkezi sayaçla uygulanır.
+
+## 6. Yapılandırılan Anahtar Sayısı
+
+- **Gerçek Groq anahtarı: 0.** Bu çalışma ortamında doğrulanmış hiçbir Groq anahtarı yoktur.
+- Sohbette düz metin paylaşılan 10 anahtar **ifşa olmuş kabul edilmiştir**; hiçbir dosyaya, `.env`'e veya Git'e yazılmamıştır. Bu anahtarların Groq konsolundan iptal edilmesi gerekir.
+- Kod 10 anahtarla çalışacak şekilde hazırdır; 20'ye kadar genişleyebilir.
+- Google/Azure TTS anahtarı: **0** (bu nedenle bulut TTS `BLOCKED_BY_EXTERNAL_CONFIGURATION`).
+
+## 7. Kapasite ve Kullanım
+
+| Anahtar sayısı | Anahtar başına kullanıcı | Toplam kapasite |
+|---|---|---|
+| 0 (mevcut) | 5 | 0 |
+| 10 | 5 | 50 kullanıcı |
+| 20 | 5 | 100 kullanıcı |
+
+- Mevcut atama: **0** (gerçek anahtar yok).
+- Havuz anahtarı günlük mesaj kotasını **atlamaz**; yalnızca kullanıcının kendi girdiği anahtar kotayı atlar.
+- Günlük 250 mesaj sayacı `commit` modeliyle yalnızca başarılı üretimden sonra artar.
+- Kota dolduğunda kullanıcı kendi API anahtarını ekleyebilir; spam için kimlik/IP sınırları ve rate limit uygulanır.
+
+## 8. Güvenlik İyileştirmeleri
+
+- Sızan anahtarlar koda/git'e yazılmadı; `.env` yok; taramada `gsk_` bulunmadı (yedek/venv/__pycache__ hariç).
+- İstemciye tam anahtar dönmez; yalnızca maskeli özet.
+- Misafir kimliği HMAC ile imzalanır; imzasız `guest_*` reddedilir (`LUMINA_ALLOW_UNSIGNED_GUEST=0`).
+- CORS: tam origin listesi, `allow_credentials=True`, wildcard yok; OPTIONS preflight ve kimlikli istekler desteklenir.
+- Güvenlik başlıkları: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`.
+- Prompt güvenlik hiyerarşisi: sistem talimatları kullanıcı/AI çıktısından üstündür.
+- Görsel kotası yalnızca başarılı üretimden sonra tüketilir; Pollinations URL'si doğrulanır.
+- Üretimde `http://` ve localhost backend adresleri reddedilir.
+- `LUMINA_ADMIN_TOKEN` olmadan yönetici havuz ucu 404 döner; yanlış token 403.
+
+## 9. CORS ve Backend Durumu
+
+- Üretim origin'i tam olarak `https://arelozcan3545-max.github.io` olarak yapılandırıldı (`deployment_config.py` + `main.py`).
+- Yerel geliştirme origin'leri varsayılan olarak açık; `LUMINA_DISABLE_LOCAL_ORIGINS=1` ile kapatılabilir.
+- OPTIONS preflight, `Authorization`/`Content-Type` başlıkları, kimlikli istekler ve SSE akışı desteklenir.
+- Wildcard + credentials birleşimi yoktur.
+- **Gerçek üretim HTTPS backend URL'si yoktur.** Bu nedenle istemci üretimde localhost'a istek atmaz ve uydurma adres üretmez; açıkça "backend yok" durumuna düşer. Backend'in dışarıya dağıtılması gerekir (`BLOCKED_BY_EXTERNAL_CONFIGURATION`).
+
+## 10. Test Sonuçları
+
+| Test | Komut | Sonuç | Durum |
+|---|---|---|---|
+| Python regresyon | `.venv\Scripts\python.exe -m pytest tests -q` | **152 passed, 1 warning** | `VERIFIED` |
+| JavaScript ses motoru | `node --test tests-js` | **10 passed, 0 failed** | `VERIFIED` |
+| JS sözdizimi | `node --check app.js`, `node --check voice_engine.js` | Başarılı | `VERIFIED` |
+| Python sözdizimi | `ast.parse` (main, api_allocation, voice_registry, voice_tts, deployment_config, assign_api) | Başarılı | `VERIFIED` |
+| Gerçek Groq/TTS çağrısı | — | Anahtar yok | `BLOCKED_BY_EXTERNAL_CONFIGURATION` |
+| Gerçek tarayıcı/mobil ses karşılaştırması | — | Cihaz/ortam yok | `NOT_IMPLEMENTED` |
+
+- Mock testleri ile gerçek sağlayıcı testleri ayrıdır; gerçek sağlayıcı testleri anahtar gerektirdiği için çalıştırılmadı.
+- Uyarı: FastAPI `TestClient` için `httpx`/`httpx2` Starlette deprecation uyarısı (işlevsel hata değil).
+
+## 11. Dış Yapılandırma Gereksinimleri
+
+1. **Groq:** Yeni anahtarlar üretilip yalnızca sunucu ortam değişkenlerine (`GROQ_KEY_01..20`) eklenmeli; eski 10 anahtar iptal edilmeli.
+2. **Backend dağıtımı:** Gerçek HTTPS URL (Render/Railway/VPS vb.) yayına alınmalı ve `config.js`/Ayarlar üzerinden tanımlanmalı.
+3. **CORS:** Dağıtılan backend'de `ALLOWED_ORIGINS` içinde `https://arelozcan3545-max.github.io` bulunmalı.
+4. **TTS:** Google (`GOOGLE_TTS_API_KEY`) ve/veya Azure (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`) tanımlanmalı.
+5. **Güvenlik:** `LUMINA_GUEST_SECRET` ve `LUMINA_ADMIN_TOKEN` uzun rastgele değerlerle tanımlanmalı.
+6. **Firebase:** `serviceAccountKey.json`, Firestore kuralları ve web `appId`.
+7. **Firebase Console:** Google sağlayıcısı ve yetkili alan adları.
+
+## 12. Bilinen Sorunlar ve Engeller
+
+- Gerçek Groq/TTS anahtarı yok; canlı ses ve sohbet kalitesi doğrulanamadı (`BLOCKED_BY_EXTERNAL_CONFIGURATION`).
+- Gerçek üretim backend URL'si yok; üretim CORS uçtan uca canlı test edilemedi (`BLOCKED_BY_EXTERNAL_CONFIGURATION`).
+- `serviceAccountKey.json` yok; Firestore/Firebase Admin canlı test edilemedi (`PARTIALLY_IMPLEMENTED`).
+- Firebase web `appId` yok; sahte değer üretilmedi (`BLOCKED_BY_EXTERNAL_CONFIGURATION`).
+- Fiziksel masaüstü/mobil cihazda gerçek ses çıktısı karşılaştırması yapılmadı (`NOT_IMPLEMENTED`).
+- Playwright/axe ve erişilebilirlik otomasyonu yok (`NOT_IMPLEMENTED`).
+- Git deposu yok; commit/push yapılamıyor (`BLOCKED_BY_EXTERNAL_CONFIGURATION`).
+
+## 13. Yayın Kararı
+
+**Durum: `PARTIALLY_IMPLEMENTED` — kod tarafı hazır, dış yapılandırma tamamlanmadan yayına alınmamalı.**
+
+- Ses motoru, API havuzu, CORS ve kota düzeltmeleri kod olarak tamamlandı ve yerel/mock testlerle doğrulandı.
+- Aşağıdakiler tamamlanmadan üretim yayını önerilmez:
+  1. Yeni Groq anahtarlarının sunucuya tanımlanması ve eski anahtarların iptali.
+  2. Gerçek HTTPS backend dağıtımı + üretim CORS doğrulaması.
+  3. TTS sağlayıcı anahtarlarının tanımlanması (veya yalnızca tarayıcı sesiyle yayına karar verilmesi).
+  4. `LUMINA_GUEST_SECRET` ve `LUMINA_ADMIN_TOKEN` değerlerinin belirlenmesi.
+  5. Gerçek cihazda ses önizleme/oynatma duman testi.
+- Gerçek anahtarlar ve gerçek dağıtım olmadan "tamamen test edildi" veya "yayına hazır" denmez.
+
+# Ek Rapor - Gerçek Konum Zekâsı, Harita, Yerler, Rotalar ve Canlı Hava Durumu (v3.2.5)
+
+Tarih: 13 Kasım 2026
+Durum: `PARTIALLY_IMPLEMENTED` — kod ve mock testler tamam; canlı sağlayıcı testleri dış kimlik bilgileri olmadığı için çalıştırılmadı.
+
+## 1. Kapsam ve Özet
+
+Bu çalışmada Lumina AI'ya izin tabanlı, gerçek veri kullanan konum zekâsı eklendi:
+
+- Kullanıcı yalnızca **açık izin** verdiğinde cihaz konumu kullanılır; izin reddedilirse bir daha sorulmaz.
+- Cihaz konumu yerine **manuel şehir** seçimi her zaman mümkündür.
+- Yakın mekân aramaları gerçek Google Places (New) verisiyle yapılır; "en yakın", "en yüksek puanlı" ve "önerilen" listeleri ayrı gösterilir.
+- Yol tarifi gerçek Google Routes API ile alınır; mesafe/süre uydurulmaz.
+- Hava durumu gerçek Open-Meteo (ve yapılandırılmışsa OpenWeatherMap yedek) verisiyle gösterilir; kaynak, lisans ve alma zamanı her kartta belirtilir. Bayat önbellek "canlı" gibi sunulmaz.
+- Harita, yapılandırılmışsa Google Maps JavaScript API ile; değilse Leaflet + OpenStreetMap ile gösterilir ve sınırlama açıkça yazılır.
+- Tüm canlı konum/hava/rota Smart UI blokları **yalnızca sunucu tarafından** üretilebilir; model çıktısındaki aynı tipler reddedilir.
+
+Hiçbir aşamada sahte koordinat, sahte işletme, sahte puan, sahte hava tahmini veya sahte rota üretilmedi. Anahtar yoksa ilgili özellik açık "sağlayıcı yapılandırılmadı" hatası verir.
+
+## 2. İncelenen Dosyalar
+
+- `main.py` — mevcut FastAPI endpoint'leri, kimlik doğrulama (`verify_token`), kota/limit akışı, chat ve stream akışı.
+- `app.js` — sohbet gönderimi (jobs/chat, /chat, /chat/stream), Smart UI render kaydı, oturum/geçmiş yönetimi.
+- `smart_ui.py` — şema doğrulama, blok çıkarma, katalog.
+- `index.html` — script sırası, üst bar butonları, mevcut siyah-beyaz premium tema.
+- `models_provider.py`, `api_allocation.py`, `storage.py`, `location_permission_service.py` — model çağrısı, kota, profil saklama ve izin modeli.
+- `.env.example`, `config.example.js` — mevcut ortam değişkeni ve istemci yapılandırma düzeni.
+- `tests/`, `tests-js/` — mevcut test düzeni ve mock/canlı ayrımı.
+- `_BACKUP_LOCATION_20261111_123434` — değişiklik öncesi tam yedek (silinmedi).
+
+## 3. Oluşturulan Dosyalar
+
+| Dosya | Görev |
+| --- | --- |
+| `location_service.py` | Ortak koordinat/haversine, TTL + stale önbellek, HTTP zaman aşımı, sağlayıcı hata sınıfları, kullanıcı/sağlayıcı kota sayacı, geocoding (Google → Open-Meteo fallback), hassas koordinat yuvarlama. |
+| `location_permission_service.py` | `unset/granted/denied/manual/off` izin modeli, cihaz konumu kabul kuralı, manuel şehir koordinatı (2 ondalık), `resolve_request_origin`. |
+| `places_service.py` | Google Places (New) `places:searchNearby` ve `places:searchText`, `X-Goog-FieldMask` ile minimum alan, önbellek, `nearest` / `top_rated` / `recommended` sıralamaları ve gerekçe metni. |
+| `routes_service.py` | Google Routes API `directions/v2:computeRoutes`, adım listesi, `encodedPolyline`, mesafe/süre, Google Maps bağlantısı. |
+| `weather_service.py` | Open-Meteo birincil, OpenWeatherMap yedek; saatlik/günlük normalize, kaynak + lisans + `fetched_at`, bayat önbellek işaretleme. |
+| `maps_service.py` | Harita sağlayıcı seçimi (`google` / `openstreetmap`), yalnızca kısıtlı tarayıcı anahtarını döndürme, sunucu anahtarını asla istemciye vermeme. |
+| `location_intelligence.py` | Türkçe intent/kategori/şehir tespiti, orkestrasyon, Smart UI blok üreticileri, model için canlı veri bağlam metni. |
+| `location_ui.js` | İzin modalı, geolocation, şehir arama, Google/Leaflet harita, polyline çözme, 5 kart üreticisi, gizlilik notları. |
+| `tests/test_location_services.py` | 52 mock test: izin, geocode fallback, sıralama/önbellek/boş sonuç, hava stale/cache, rota, anahtar sızıntısı, kota/timeout, server-only filtre. |
+| `tests/test_location_live.py` | `LUMINA_RUN_LIVE_LOCATION_TESTS=1` kapılı 5 canlı test; anahtar yoksa skip. |
+| `tests-js/location_ui.test.mjs` | 11 saf istemci testi (koordinat, URL güvenliği, mesafe, puan, izin, sıralama, polyline). |
+
+## 4. Değiştirilen Dosyalar
+
+- `main.py` — 6 yeni endpoint: `GET /api/v1/location/config`, `GET /status`, `POST /preference`, `GET /geocode`, `POST /places`, `POST /weather`, `POST /directions`; chat ve stream isteklerine canlı konum bağlamı ve sunucu Smart UI birleştirmesi.
+- `smart_ui.py` — 5 yeni tip (`location_results`, `weather_forecast`, `route_info`, `location_request`, `location_info`), şemalar, `SERVER_ONLY_UI_TYPES`, `SCHEMA_REGISTRY`, `extract_smart_ui_blocks(include_server_only=...)`; katalog 17 tipe çıktı.
+- `app.js` — `getChatLocationPayload()`, üç sohbet isteğine `location` alanı, 5 yeni tip için Smart UI kaydı, `SERVER_ONLY_UI_TYPES` ve `sanitizeClientSmartBlock(block, {allowServerOnly})` ile sunucu/model ayrımı.
+- `index.html` — `location-btn`, `.loc-*` / `.weather-*` / `.route-*` / modal / harita CSS'i, `location_ui.js?v=3.2.4` script sırası.
+- `.env.example` — gerçek kodla eşleşen konum bölümü (sağlayıcı anahtarları, TTL, kota, timeout).
+- `config.example.js` — `LOCATION_ENABLED`, tarayıcı anahtarının istemci yapılandırmasına yazılmayacağı notu.
+- `tests/test_api.py`, `tests/test_smart_ui.py` — katalog sayısı 17'ye güncellendi.
+- `tests/test_api_allocation.py` — kapasite testi deterministik hale getirildi (rastgele seçim patch'lendi).
+
+## 5. Mimari Değişiklikler
+
+- **Modüler servis katmanı:** `location_service` (ortak), `location_permission_service`, `places_service`, `routes_service`, `weather_service`, `maps_service`, `location_intelligence` (orkestrasyon).
+- **Tek yönlü bağımlılık:** servisler `main.py`'yi import etmez; `location_intelligence` servisleri, `main.py` yalnızca orkestrasyonu çağırır.
+- **İstemci/sunucu ayrımı:** canlı veri blokları sunucuda üretilir; istemci yalnızca güvenli DOM oluşturucularıyla çizer. `location_ui.js` hiçbir API anahtarı içermez.
+- **Önbellek:** süreç içi, bellek içi, TTL + sınırlı stale penceresi; diske yazılmaz, kullanıcılar arasında paylaşılan veri kişisel konum içermez (koordinatlar yuvarlanmış anahtarla).
+- **Hata modeli:** `LocationServiceError` alt sınıfları (`Configuration`, `Validation`, `Timeout`, `Upstream`) Türkçe, koordinat içermeyen genel mesaj döndürür.
+- **Kota ayrımı:** kullanıcı kotası (dakika/gün, misafir ayrı) ile sağlayıcı kotası (Google/Open-Meteo günlük üst sınır) ayrı sayaçlarla uygulanır.
+- **Smart UI güvenliği:** `SERVER_ONLY_UI_TYPES` sunucuda ve istemcide ayrı ayrı uygulanır; model çıktısındaki konum/hava/rota blokları iki katmanda da atılır.
+
+## 6. Seçilen Sağlayıcılar ve Veri Kaynakları
+
+| İhtiyaç | Birincil | Yedek / Fallback | Not |
+| --- | --- | --- | --- |
+| Geocoding | Google Geocoding API | Open-Meteo Geocoding (`geocoding-api.open-meteo.com`) | Google anahtarı yoksa fallback; `LUMINA_ALLOW_OPEN_METEO_GEOCODING=0` ile kapatılabilir. |
+| Yakın mekân | Google Places API (New) `searchNearby` | — | Yalnızca POST; `X-Goog-FieldMask` zorunlu. |
+| Metinle mekân | Google Places API (New) `searchText` | — | Rota hedefi çözümünde de kullanılır. |
+| Yol tarifi | Google Routes API `computeRoutes` | — | `DRIVE` varsayılan; polyline döner. |
+| Hava durumu | Open-Meteo | OpenWeatherMap | Open-Meteo ticari olmayan ücretsiz katman; ticari kullanım için abonelik gerekir. |
+| Harita | Google Maps JavaScript API | Leaflet + OpenStreetMap | Google tarayıcı anahtarı yoksa OSM; sınırlama kullanıcıya yazılır. |
+
+## 7. Gereken Kimlik Bilgileri ve Dış Yapılandırma
+
+Sunucu ortam değişkenleri (değerler asla repoya yazılmaz):
+
+- `GOOGLE_MAPS_API_KEY` — Geocoding + Places (New) + Routes için sunucu anahtarı. Google Cloud'da yalnızca bu API'lere kısıtlanmalı; istemciye verilmez.
+- `GOOGLE_MAPS_JS_API_KEY` — Harita için tarayıcı anahtarı. **Yalnızca HTTP referrer + Maps JavaScript API** kısıtıyla kullanılmalı. Yalnızca kimliği doğrulanmış `/api/v1/location/config` yanıtında döner.
+- `GOOGLE_MAPS_MAP_ID` — (opsiyonel) Google harita stili.
+- `OPEN_METEO_API_KEY` — ticari kullanım için `customer-api.open-meteo.com` erişimi.
+- `OPENWEATHER_API_KEY` — (opsiyonel) yedek hava sağlayıcısı.
+- `LUMINA_ENABLE_LOCATION`, `LUMINA_LOCATION_HTTP_TIMEOUT`, `LUMINA_LOCATION_RATE_LIMIT_PER_MIN`, `LUMINA_LOCATION_DAILY_PER_USER`, `LUMINA_LOCATION_DAILY_PER_GUEST`, `LUMINA_GOOGLE_*_DAILY_MAX`, önbellek TTL'leri, `LUMINA_ALLOW_OPEN_METEO_GEOCODING`.
+
+Google Cloud tarafında ayrıca: faturalandırma hesabı, Places API (New), Routes API, Geocoding API ve Maps JavaScript API'nin etkinleştirilmesi, tarayıcı anahtarı için üretim alan adı referrer kısıtı.
+
+## 8. Güvenlik ve Gizlilik
+
+- **Açık izin:** Cihaz koordinatı yalnızca `consent=true` ve izin durumu `denied/off` değilken kabul edilir. Ret sonrası tekrar sorulmaz; şehir alternatifi sunulur.
+- **Minimum hassasiyet:** Places/geocoding/hava için 3 ondalık (~110 m), rota için 4 ondalık (~11 m), manuel şehir saklama 2 ondalık (~1.1 km).
+- **Loglama:** Hassas koordinatlar loglanmaz; hata mesajları sağlayıcı URL'si veya koordinat içermez.
+- **Saklama:** Cihaz konumu diske yazılmaz; yalnızca oturum belleğinde tutulur. Kullanıcı izni istediği an iptal edebilir.
+- **Kullanıcı izolasyonu:** Konum tercihi kullanıcı profilinde tutulur; önbellek anahtarları kullanıcıya değil yuvarlanmış koordinata bağlıdır.
+- **Anahtar sızıntısı:** Sunucu anahtarı hiçbir endpoint'te dönmez; yalnızca kısıtlı tarayıcı anahtarı, kimliği doğrulanmış istemciye verilir.
+- **Prompt/UI enjeksiyonu:** Canlı konum/hava/rota blokları model çıktısından kabul edilmez; istemci `sanitizeClientSmartBlock` ile ikinci kez filtreler. Keyfî HTML/JS çalıştırılmaz.
+- **URL güvenliği:** İşletme bağlantıları yalnızca `http/https` ise tıklanabilir; `javascript:` / `data:` reddedilir.
+- **Kota/kötüye kullanım:** Kullanıcı ve sağlayıcı kotaları ayrı; aşımda Türkçe, açık hata.
+
+## 9. Test Sonuçları
+
+Komutlar:
+
+```powershell
+$env:PYTHONIOENCODING='utf-8'; & '.venv\Scripts\python.exe' -m pytest tests -q
+& 'C:\Program Files\nodejs\node.exe' --test tests-js
+& 'C:\Program Files\nodejs\node.exe' --check app.js
+& 'C:\Program Files\nodejs\node.exe' --check location_ui.js
+```
+
+Sonuçlar (13 Kasım 2026):
+
+- Python: **204 passed, 5 skipped, 0 failed** (skip'ler `LUMINA_RUN_LIVE_LOCATION_TESTS` kapalı olduğu için canlı konum testleri).
+- Node: **21 passed, 0 failed** (11 konum istemci testi + 10 ses motoru testi).
+- `node --check app.js` ve `node --check location_ui.js`: başarılı.
+
+Kapsanan davranışlar: izin reddi/iptali, manuel şehir, Google→Open-Meteo geocode fallback, Places sıralama ve boş sonuç, önbellek ve bayat hava işaretleme, rota, tarayıcı anahtarı sızıntısı, kota/timeout, modelin canlı blok üretememesi.
+
+## 10. Canlı Test Edilmeyenler / Engeller
+
+`BLOCKED_BY_EXTERNAL_CONFIGURATION`:
+
+- Gerçek `GOOGLE_MAPS_API_KEY` yok → Places (New), Routes, Geocoding canlı doğrulanamadı.
+- Gerçek `GOOGLE_MAPS_JS_API_KEY` yok → Google Maps JS canlı doğrulanamadı (OSM fallback kod yolu mevcut).
+- `OPEN_METEO_API_KEY` / ticari abonelik yok → yalnızca ücretsiz katman; ticari kullanım doğrulanamadı.
+- `OPENWEATHER_API_KEY` yok → yedek hava sağlayıcısı canlı doğrulanamadı.
+- `serviceAccountKey.json` yok → Firestore/Firebase Admin canlı doğrulanamadı.
+- Gerçek üretim HTTPS backend URL'si yok → uçtan uca istemci-sunucu akışı canlı doğrulanamadı.
+- Gerçek tarayıcı/cihaz (masaüstü + mobil) ve gerçek geolocation izin akışı elle test edilmedi.
+- Playwright/axe erişilebilirlik otomasyonu yok.
+
+## 11. Bilinen Sınırlar ve Olası API Maliyetleri
+
+Sınırlar:
+
+- Google anahtarı yoksa mekân/rota/geocoding özellikleri çalışmaz; uydurma veri üretilmez.
+- Open-Meteo ücretsiz katmanı **ticari kullanıma uygun değildir**; ticari yayında abonelik gerekir (10.000/gün, 5.000/saat, 600/dakika ücretsiz limitler).
+- OSM haritası çevrimdışıysa harita çizilmez; kart yine metin olarak çalışır ve sınırlama yazılır.
+- Yaya/toplu taşıma modları rota servisinde destekleniyor olsa da arayüz şu an `DRIVE` odaklı.
+- Oturum belleğindeki cihaz konumu sayfa yenilenince temizlenir (bilinçli tasarım).
+- Canlı konum özelliği backend gerektirir; backend yoksa buton açık uyarı verir.
+
+Olası maliyetler (yaklaşık; kesin fiyat Google Cloud konsolundan doğrulanmalı):
+
+- **Places API (New) Nearby/Text Search:** istek başına SKU'ya göre ücretlendirilir; `rating` ve `userRatingCount` alanları **Enterprise** SKU'ya yükseltir. `X-Goog-FieldMask` bu yüzden minimum tutuldu.
+- **Routes API Compute Routes:** istek başına Essentials/Advanced SKU; trafik verisi ve alternatif rota maliyeti artırır.
+- **Geocoding API:** 1.000 istek başına ücret; aylık ücretsiz kredi Google tarafından değiştirilebilir.
+- **Maps JavaScript API Dynamic Maps:** harita yüklemesi başına ücret; tarayıcı anahtarı kota/kısıt ile korunmalı.
+- **Open-Meteo:** ücretsiz katman ticari değil; ticari abonelik aylık sabit ücretlidir.
+- **OpenWeatherMap:** ücretsiz katman limitli; aşımda istek başına ücret.
+
+Öneri: `LUMINA_GOOGLE_*_DAILY_MAX` ve kullanıcı kotaları üretimde düşük tutulmalı, Google Cloud bütçe uyarısı ve kota limiti tanımlanmalı.
+
+## 12. Üretim Öncesi Yapılacaklar
+
+1. Google Cloud'da faturalandırma + Places (New), Routes, Geocoding, Maps JavaScript API'lerini etkinleştir.
+2. Sunucu anahtarını yalnızca bu API'lere; tarayıcı anahtarını yalnızca üretim HTTP referrer'larına kısıtla.
+3. Anahtarları yalnızca sunucu ortam değişkenlerine yaz; repoya/istemciye koyma.
+4. Ticari kullanım için Open-Meteo aboneliği al (`OPEN_METEO_API_KEY` + `customer-api.open-meteo.com`).
+5. `LUMINA_RUN_LIVE_LOCATION_TESTS=1` ile canlı testleri gerçek anahtarlarla çalıştır ve sonuçları rapora ekle.
+6. Gerçek HTTPS backend dağıtımı yap; CORS'u tam olarak `https://arelozcan3545-max.github.io` için doğrula.
+7. Gerçek masaüstü/mobil cihazda izin akışını, izin reddini, şehir seçimini, harita ve kartları elle doğrula.
+8. Firebase web `appId` ve `serviceAccountKey.json` tamamlanmadan kimlik doğrulamalı canlı akışı "tamamlandı" sayma.
+9. Google Cloud bütçe uyarısı, günlük sağlayıcı kotası ve kullanıcı kotalarını üretim değerlerine ayarla.
+10. Erişilebilirlik (klavye/odak/aria) ve Playwright duman testlerini ekle.
+
+---
+
+## Ek Denetim Raporu (13 Kasım 2026)
+
+Bağımsız üretim hazırlığı denetimi ayrı bir belgede toplandı:
+
+- `KONUM_DENETIM_RAPORU_2026-11-13.md`
+
+Bu belge; Öncelik 1–6 bulgularını, yapılan düzeltmeleri, üretim engellerini, güvenlik risklerini, eksik kimlik bilgilerini, tahmini API maliyetlerini, test kategorilerini ve gerçek sonuçları, manuel yapılandırma listesini ve **NO-GO** kararını içerir.
+
+Özet durum: otomatik testler **212 passed / 5 skipped**, Node **21 passed**, canlı testler **3 passed / 2 skipped** (yalnızca Open-Meteo). Google Places/Routes/Geocoding, Maps JavaScript, OpenWeather, Firebase ve gerçek cihaz/tarayıcı testleri dış kimlik bilgileri olmadığı için çalıştırılmadı ve "geçti" sayılmaz.

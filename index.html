@@ -7,6 +7,10 @@
     <meta name="description" content="Lumina AI: Duygusal, zeki ve çoklu ajan destekli yapay zeka asistanı. Adım adım matematik, tam teşekküllü yazılım ekibi ve ultra gerçekçi görsel stüdyosu.">
     <meta name="theme-color" content="#0a0a0a">
 
+    <!-- Favicon (404'ü önlemek için gömülü SVG; harici istek yok) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233b82f6'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Ctext x='32' y='45' font-family='Arial,sans-serif' font-size='36' font-weight='bold' fill='%23ffffff' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233b82f6'/%3E%3Ctext x='32' y='45' font-family='Arial,sans-serif' font-size='36' font-weight='bold' fill='%23ffffff' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
+
     <!-- Open Graph / Meta -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="Lumina AI — Gelişmiş Çoklu Ajan ve Görsel Stüdyosu">
@@ -1826,6 +1830,50 @@
             border-color: var(--accent);
         }
 
+        .voice-badge {
+            display: inline-block;
+            margin-top: 3px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            width: fit-content;
+        }
+
+        .voice-badge-ok {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+
+        .voice-badge-off {
+            background: rgba(239, 68, 68, 0.12);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .voice-card.voice-unavailable {
+            opacity: 0.68;
+        }
+
+        .voice-engine-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0 10px;
+            flex-wrap: wrap;
+        }
+
+        #voice-engine-status {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        #voice-engine-status[data-state="ok"] { color: #10b981; }
+        #voice-engine-status[data-state="warn"] { color: #f59e0b; }
+        #voice-engine-status[data-state="error"] { color: #ef4444; }
+
         /* 3. Renk Seçenekleri */
         .color-palette-wrap {
             margin-top: 10px;
@@ -3199,6 +3247,289 @@
                 transition: none !important;
             }
         }
+
+        /* ============================================================
+           KONUM / HAVA / HARİTA (location_ui.js)
+           Siyah-beyaz premium tema ile uyumlu, mobil uyumlu kartlar.
+           ============================================================ */
+        .loc-card {
+            background: var(--bg-card, #141414);
+            border: 1px solid var(--border-color, #2a2a2a);
+            border-radius: 16px;
+            padding: 14px;
+            margin: 10px 0;
+            color: var(--text-primary, #f5f5f5);
+            font-size: 13px;
+        }
+
+        .loc-meta,
+        .loc-source,
+        .loc-facts,
+        .loc-actions,
+        .loc-tabs,
+        .loc-city-grid,
+        .loc-city-search {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .loc-meta { color: var(--text-secondary, #a3a3a3); font-size: 12px; margin-bottom: 10px; }
+
+        .loc-tabs { margin-bottom: 10px; border-bottom: 1px solid var(--border-color, #2a2a2a); padding-bottom: 8px; }
+
+        .loc-tab {
+            background: transparent;
+            border: 1px solid var(--border-color, #2a2a2a);
+            color: var(--text-secondary, #a3a3a3);
+            border-radius: 999px;
+            padding: 5px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .loc-tab.active,
+        .loc-tab:hover {
+            color: #fff;
+            border-color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .loc-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .loc-item {
+            border: 1px solid var(--border-color, #2a2a2a);
+            border-radius: 12px;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .loc-item-head { display: flex; justify-content: space-between; gap: 8px; }
+        .loc-item-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .loc-index { color: var(--text-secondary, #a3a3a3); font-size: 12px; }
+
+        .loc-badge {
+            font-size: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 999px;
+            padding: 2px 8px;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .loc-facts { margin-top: 6px; font-size: 12px; color: var(--text-secondary, #a3a3a3); }
+        .loc-address { margin-top: 4px; color: var(--text-secondary, #a3a3a3); font-size: 12px; line-height: 1.45; }
+        .loc-actions { margin-top: 8px; gap: 10px; }
+        .loc-phone { color: var(--text-secondary, #a3a3a3); font-size: 12px; }
+
+        .loc-link,
+        .loc-link-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 12px;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .loc-link:hover,
+        .loc-link-btn:hover { opacity: 0.75; }
+
+        .loc-primary-btn,
+        .loc-secondary-btn {
+            border-radius: 999px;
+            padding: 8px 16px;
+            font-size: 12.5px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .loc-primary-btn { background: #fff; color: #000; border: 1px solid #fff; font-weight: 600; }
+        .loc-primary-btn:hover { background: #e5e5e5; }
+        .loc-secondary-btn { background: transparent; color: #fff; border: 1px solid var(--border-color, #3a3a3a); }
+        .loc-secondary-btn:hover { border-color: #fff; }
+
+        .loc-warning,
+        .loc-note,
+        .loc-inline-status,
+        .loc-empty,
+        .loc-ranking-note {
+            font-size: 12px;
+            line-height: 1.5;
+            border-radius: 10px;
+            padding: 8px 10px;
+            margin-top: 8px;
+        }
+
+        .loc-warning { border: 1px solid rgba(255, 120, 120, 0.4); background: rgba(255, 80, 80, 0.08); color: #ffb4b4; }
+        .loc-note { border: 1px solid var(--border-color, #2a2a2a); color: var(--text-secondary, #a3a3a3); }
+        .loc-inline-status { color: var(--text-secondary, #a3a3a3); }
+        .loc-empty { border: 1px dashed var(--border-color, #3a3a3a); color: var(--text-secondary, #a3a3a3); }
+        .loc-ranking-note { color: var(--text-secondary, #a3a3a3); border-left: 2px solid rgba(255, 255, 255, 0.3); }
+
+        .loc-source {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color, #2a2a2a);
+            font-size: 11px;
+            color: var(--text-secondary, #a3a3a3);
+            justify-content: space-between;
+        }
+
+        .loc-map-wrap { margin: 10px 0; }
+        .loc-map { width: 100%; height: 240px; border-radius: 12px; overflow: hidden; background: #0d0d0d; }
+        .loc-popup { color: #111; font-size: 12px; line-height: 1.4; max-width: 220px; }
+        .loc-popup strong { color: #000; }
+
+        .weather-now { display: flex; align-items: center; gap: 14px; }
+        .weather-icon { font-size: 40px; line-height: 1; }
+        .weather-temp { font-size: 34px; font-weight: 700; line-height: 1; }
+        .weather-condition { color: var(--text-secondary, #a3a3a3); font-size: 13px; margin-top: 4px; }
+        .weather-feels { color: var(--text-secondary, #a3a3a3); font-size: 12px; margin-top: 2px; }
+        .weather-metrics { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .weather-metric {
+            flex: 1 1 100px;
+            border: 1px solid var(--border-color, #2a2a2a);
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .weather-metric-label { font-size: 11px; color: var(--text-secondary, #a3a3a3); }
+        .weather-hours { display: flex; gap: 8px; overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+        .weather-hour {
+            min-width: 58px;
+            border: 1px solid var(--border-color, #2a2a2a);
+            border-radius: 10px;
+            padding: 8px 6px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            font-size: 12px;
+        }
+        .weather-hour-rain { color: #8ab4ff; font-size: 11px; }
+        .weather-daily { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+        .weather-day { display: grid; grid-template-columns: 64px 26px 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; }
+        .weather-day-name { color: var(--text-secondary, #a3a3a3); }
+        .weather-day-cond { color: var(--text-secondary, #a3a3a3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .weather-range { display: flex; align-items: center; gap: 6px; min-width: 110px; }
+        .weather-bar { flex: 1; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+        .weather-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, #6fa8ff, #ffd166); border-radius: 999px; }
+        .weather-min { color: var(--text-secondary, #a3a3a3); }
+        .weather-max { font-weight: 600; }
+        .weather-day-rain { color: #8ab4ff; font-size: 11px; }
+
+        .route-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+        .route-summary-item {
+            flex: 1 1 90px;
+            border: 1px solid var(--border-color, #2a2a2a);
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .route-summary-label { font-size: 11px; color: var(--text-secondary, #a3a3a3); }
+        .route-steps { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+        .route-step { font-size: 12px; line-height: 1.45; }
+        .route-step-meta { color: var(--text-secondary, #a3a3a3); margin-left: 6px; font-size: 11px; }
+
+        .loc-info-head { display: flex; align-items: center; gap: 8px; }
+        .loc-coords { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text-secondary, #a3a3a3); margin-top: 4px; }
+        .loc-privacy-note { font-size: 11px; color: var(--text-secondary, #7a7a7a); margin: 10px 0 0; line-height: 1.45; }
+
+        .loc-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(6px);
+            z-index: 100000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .loc-modal-overlay[hidden] { display: none; }
+
+        .loc-modal {
+            width: min(520px, 100%);
+            max-height: 88vh;
+            overflow-y: auto;
+            background: var(--bg-card, #121212);
+            border: 1px solid var(--border-color, #2f2f2f);
+            border-radius: 20px;
+            padding: 18px;
+            color: var(--text-primary, #f5f5f5);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+        }
+        .loc-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .loc-modal-header h3 { margin: 0; font-size: 17px; }
+        .loc-modal-close { background: none; border: none; color: var(--text-secondary, #a3a3a3); font-size: 18px; cursor: pointer; }
+        .loc-modal-text { font-size: 13px; line-height: 1.6; color: var(--text-secondary, #b3b3b3); margin: 0 0 12px; }
+        .loc-modal-body { display: flex; flex-direction: column; gap: 10px; }
+        .loc-divider {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+            color: var(--text-secondary, #7a7a7a);
+            margin: 6px 0;
+        }
+        .loc-divider::before,
+        .loc-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-color, #2a2a2a); }
+
+        .loc-city-grid { gap: 8px; }
+        .loc-city-btn {
+            background: transparent;
+            border: 1px solid var(--border-color, #333);
+            color: #fff;
+            border-radius: 999px;
+            padding: 6px 14px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .loc-city-btn:hover { border-color: #fff; }
+        .loc-city-search { gap: 8px; }
+        .loc-city-input {
+            flex: 1;
+            min-width: 120px;
+            background: var(--bg-input, #1a1a1a);
+            border: 1px solid var(--border-color, #333);
+            border-radius: 999px;
+            color: #fff;
+            padding: 8px 14px;
+            font-size: 13px;
+            outline: none;
+        }
+        .loc-city-input:focus { border-color: #fff; }
+        .loc-city-results { display: flex; flex-direction: column; gap: 6px; }
+        .loc-city-result {
+            text-align: left;
+            background: transparent;
+            border: 1px solid var(--border-color, #2a2a2a);
+            border-radius: 10px;
+            color: #fff;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            cursor: pointer;
+        }
+        .loc-city-result:hover { border-color: #fff; background: rgba(255, 255, 255, 0.05); }
+
+        @media (max-width: 640px) {
+            .loc-map { height: 190px; }
+            .loc-card { padding: 12px; border-radius: 14px; }
+            .weather-day { grid-template-columns: 54px 22px 1fr auto; }
+            .weather-day-cond { display: none; }
+            .weather-day-rain { display: none; }
+            .loc-modal { padding: 14px; border-radius: 16px; }
+            .route-summary-item { flex: 1 1 70px; }
+        }
     </style>
 </head>
 
@@ -3401,6 +3732,10 @@
 
                     <button class="input-tool-btn" id="tts-btn" onclick="toggleSpeechOutput()" title="Sesli Okuma (Açık/Kapalı)">
                         🔊
+                    </button>
+
+                    <button class="input-tool-btn" id="location-btn" title="Konum, Hava Durumu ve Harita">
+                        📍
                     </button>
 
                     <input
@@ -3616,7 +3951,12 @@
             <!-- 2. SES SEÇENEKLERİ (JENNA, TOMMY VB.) -->
             <div class="settings-section">
                 <h4>🎙️ Ses Seçenekleri</h4>
-                <span class="switch-desc">Sesli konuşma ve Canlı Ses Dairesi modunda kullanılacak sesi seçin:</span>
+                <span class="switch-desc">Sesli konuşma ve Canlı Ses Dairesi modunda kullanılacak sesi seçin. Her profil gerçek ve benzersiz bir sağlayıcı sesine bağlanır; pitch ile taklit yapılmaz.</span>
+
+                <div class="voice-engine-row">
+                    <span id="voice-engine-status" data-state="loading">Ses yetenekleri taranıyor...</span>
+                    <button class="settings-mini-btn" style="margin-top:0;" onclick="retryVoiceEngine()">↻ Yeniden Tara</button>
+                </div>
 
                 <div class="voice-section-title">👩 Kız Sesleri</div>
                 <div class="voice-grid">
@@ -3626,6 +3966,7 @@
                             <div class="voice-info">
                                 <span class="voice-name">Jenna</span>
                                 <span class="voice-meta">Doğal & Canlı (Kadın)</span>
+                                <span class="voice-badge" id="voice-badge-jenna">Kontrol ediliyor…</span>
                             </div>
                         </div>
                         <button class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice('jenna')">▶ Dinle</button>
@@ -3637,6 +3978,7 @@
                             <div class="voice-info">
                                 <span class="voice-name">Emma</span>
                                 <span class="voice-meta">Nazik & Dingin (Kadın)</span>
+                                <span class="voice-badge" id="voice-badge-emma">Kontrol ediliyor…</span>
                             </div>
                         </div>
                         <button class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice('emma')">▶ Dinle</button>
@@ -3648,6 +3990,7 @@
                             <div class="voice-info">
                                 <span class="voice-name">Elif</span>
                                 <span class="voice-meta">Akıcı Türkçe (Kadın)</span>
+                                <span class="voice-badge" id="voice-badge-elif">Kontrol ediliyor…</span>
                             </div>
                         </div>
                         <button class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice('elif')">▶ Dinle</button>
@@ -3662,6 +4005,7 @@
                             <div class="voice-info">
                                 <span class="voice-name">Tommy</span>
                                 <span class="voice-meta">Dinamik & Modern (Erkek)</span>
+                                <span class="voice-badge" id="voice-badge-tommy">Kontrol ediliyor…</span>
                             </div>
                         </div>
                         <button class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice('tommy')">▶ Dinle</button>
@@ -3673,6 +4017,7 @@
                             <div class="voice-info">
                                 <span class="voice-name">David</span>
                                 <span class="voice-meta">Tok & Karizmatik (Erkek)</span>
+                                <span class="voice-badge" id="voice-badge-david">Kontrol ediliyor…</span>
                             </div>
                         </div>
                         <button class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice('david')">▶ Dinle</button>
@@ -3684,6 +4029,7 @@
                             <div class="voice-info">
                                 <span class="voice-name">Barış</span>
                                 <span class="voice-meta">Doğal Türkçe (Erkek)</span>
+                                <span class="voice-badge" id="voice-badge-baris">Kontrol ediliyor…</span>
                             </div>
                         </div>
                         <button class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice('baris')">▶ Dinle</button>
@@ -3726,9 +4072,11 @@
                 
                 <div class="form-row">
                     <label>Backend API URL</label>
-                    <input type="text" id="setting-backend-url" placeholder="http://127.0.0.1:8000/api/v1">
+                    <input type="text" id="setting-backend-url" placeholder="https://ornek-backend.example.com/api/v1">
                     <span style="font-size:11px; color:var(--text-muted); display:block; margin-top:4px;">
-                        Yerel çalıştırırken <code>http://127.0.0.1:8000/api/v1</code> kullanın.
+                        Yayında <strong>yalnızca HTTPS</strong> adres kabul edilir (örn. <code>https://ornek-backend.example.com/api/v1</code>).
+                        Yerel geliştirmede <code>http://127.0.0.1:8000/api/v1</code> otomatik kullanılır.
+                        Adres boşsa uygulama uydurma bir sunucuya bağlanmaz; cihaz üzerinde çalışır.
                     </span>
                 </div>
 
@@ -4148,7 +4496,9 @@
     <div id="toast-stack" aria-live="polite"></div>
     <!-- Sürüm sorgusu, güncellemelerde tarayıcı HTTP önbelleğinin eski
          config.js/app.js dosyalarını sunmasını engeller. Her sürümde artırın. -->
-    <script src="config.js?v=3.2.3" onerror=""></script>
-    <script src="app.js?v=3.2.3"></script>
+    <script src="config.js?v=3.2.4" onerror=""></script>
+    <script src="voice_engine.js?v=3.2.4" onerror=""></script>
+    <script src="location_ui.js?v=3.2.4" onerror=""></script>
+    <script src="app.js?v=3.2.4"></script>
 </body>
 </html>

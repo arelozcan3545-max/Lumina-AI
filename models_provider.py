@@ -21,7 +21,7 @@ import threading
 import datetime
 import requests
 from email.utils import parsedate_to_datetime
-from typing import List, Dict, Any, Optional, Generator, Callable, Tuple
+from typing import List, Dict, Any, Optional, Generator, Callable, Tuple, Set
 
 logger = logging.getLogger("LuminaModelProvider")
 
@@ -1009,7 +1009,8 @@ def execute_chat_completion(
     custom_gemini_key: Optional[str] = None,
     custom_groq_key: Optional[str] = None,
     custom_github_token: Optional[str] = None,
-    custom_model_tier: Optional[str] = None
+    custom_model_tier: Optional[str] = None,
+    allowed_providers: Optional[Set[str]] = None,
 ) -> Tuple[str, str]:
     """
     Kaskad dayanıklılığıyla sohbet tamamlar.
@@ -1021,6 +1022,11 @@ def execute_chat_completion(
       - 401/403 → yetki hatası; sağlayıcı bu süreçte 15 dk kaplanır, sıradakine geç
       - 5xx / ağ → üstel bekleyip tekrar dene, sonra sıradakine geç
     Hata sınıfları Türkçe anlaşılır mesajlar üretir (ProviderError taksonomisi).
+
+    `allowed_providers` verilirse yalnızca bu sağlayıcılar ve YALNIZCA
+    kullanıcının sağladığı özel anahtarlarla denenir. Sunucu anahtarlarına
+    geri dönüş yapılmaz. Bu, "kendi anahtarını getir" kota muafiyetinin
+    sahte anahtarla sunucu kaynaklarını tüketmesini engeller.
     """
     keys = {
         "gemini": (custom_gemini_key or "").strip() or None,
@@ -1028,8 +1034,13 @@ def execute_chat_completion(
         "github": (custom_github_token or "").strip() or None,
     }
 
+    def _provider_allowed(provider: str) -> bool:
+        if allowed_providers is None:
+            return True
+        return provider in allowed_providers and bool(keys.get(provider))
+
     # 1) Kullanıcı özel Gemini anahtarı girdiyse önce o denenir
-    if keys["gemini"]:
+    if keys["gemini"] and _provider_allowed("gemini"):
         try:
             res = call_gemini(
                 messages, model=GEMINI_MODEL_HIGH, temperature=temperature,
@@ -1047,6 +1058,9 @@ def execute_chat_completion(
     for cand in candidates:
         provider = cand["provider"]
         model = cand["model"]
+
+        if not _provider_allowed(provider):
+            continue
 
         # Yapılandırılmamış sağlayıcıları erken ele (anahtar yoksa deneme bile yapma)
         using_custom_key = bool(keys.get(provider))
@@ -1100,7 +1114,8 @@ def stream_chat_completion(
     custom_gemini_key: Optional[str] = None,
     custom_groq_key: Optional[str] = None,
     custom_github_token: Optional[str] = None,
-    custom_model_tier: Optional[str] = None
+    custom_model_tier: Optional[str] = None,
+    allowed_providers: Optional[Set[str]] = None,
 ) -> Tuple[Generator[str, None, None], str]:
     """
     Kaskad destekli canlı akış. İlk başarılı sağlayıcı akışı devralır.
@@ -1113,6 +1128,11 @@ def stream_chat_completion(
     }
     candidates = select_model_candidates(subscription_tier, custom_model_tier)
     last_error: Optional[ProviderError] = None
+
+    def _provider_allowed(provider: str) -> bool:
+        if allowed_providers is None:
+            return True
+        return provider in allowed_providers and bool(keys.get(provider))
 
     def _open_candidate(provider: str, model: str) -> Generator[str, None, None]:
         """Akışı açar ve İLK parçayı bekler.
@@ -1151,7 +1171,7 @@ def stream_chat_completion(
         return _chained()
 
     # 1) Özel Gemini anahtarı önceliği
-    if keys["gemini"]:
+    if keys["gemini"] and _provider_allowed("gemini"):
         try:
             gen = _open_candidate("gemini", GEMINI_MODEL_HIGH)
             return gen, f"Google {GEMINI_MODEL_HIGH} (Özel Anahtar)"
@@ -1165,6 +1185,9 @@ def stream_chat_completion(
     for cand in candidates:
         provider = cand["provider"]
         model = cand["model"]
+
+        if not _provider_allowed(provider):
+            continue
 
         using_custom_key = bool(keys.get(provider))
         if not using_custom_key and not _credentials_exist(provider):

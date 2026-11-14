@@ -36,6 +36,25 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Sunucu tarafı kalıcı kota kayıtları: istemci okuyamaz/yazamaz.
+    // (Günlük mesaj/görsel sayaçları yalnızca Admin SDK transaction'ı ile yazılır.)
+    match /user_quota_usage/{uid} {
+      allow read, write: if false;
+    }
+
+    // API anahtar havuzu atamaları ve kullanım sayaçları: yalnızca sunucu.
+    match /api_assignments/{uid} {
+      allow read, write: if false;
+    }
+    match /api_key_usage/{docId} {
+      allow read, write: if false;
+    }
+
+    // Profil aynası yalnızca sunucu tarafından yazılır.
+    match /profiles/{uid} {
+      allow read, write: if false;
+    }
+
     // Varsayılan kural: Diğer tüm erişimleri engelle
     match /{document=**} {
       allow read, write: if false;
