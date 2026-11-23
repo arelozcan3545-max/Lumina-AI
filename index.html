@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f5">
+  <meta name="description" content="LuminaStudios Software Company. Lumina AI'nin gelişim yolculuğunu, tarihçesini ve teknoloji vizyonunu keşfedin.">
+  <meta property="og:title" content="LuminaStudios | Technology with a story">
+  <meta property="og:description" content="Bir fikrin teknolojiye dönüşüm hikâyesi.">
+  <meta property="og:type" content="website">
+  <title>LuminaStudios | Technology with a story</title>
+  <style>
+    :root{color-scheme:light;--bg:#f7f7f5;--surface:#fff;--surface-2:#f0f0ed;--text:#17191d;--muted:#70747c;--line:#e4e5e2;--accent:#536ee8;--accent-soft:#edf0ff;--nav:rgba(255,255,255,.9);--shadow:0 18px 55px rgba(20,25,40,.07)}
+    [data-theme=dark]{color-scheme:dark;--bg:#101114;--surface:#191b20;--surface-2:#22252c;--text:#f3f4f6;--muted:#a1a5af;--line:#30333b;--accent:#9aa9ff;--accent-soft:#272d49;--nav:rgba(17,18,22,.9);--shadow:0 18px 55px rgba(0,0,0,.25)}
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth;scroll-padding-top:92px}
+    body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);line-height:1.65;overflow-x:hidden;transition:background .3s,color .3s}
+    button,a{font:inherit}button{cursor:pointer}a{color:inherit;text-decoration:none}
+    :focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+    .container{width:min(1160px,90%);margin-inline:auto}
+    .section{padding:112px 0}
+    .eyebrow{font-size:.74rem;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+    h1,h2,h3{line-height:1.13;letter-spacing:-.04em}
+    .section-title{font-size:clamp(2.1rem,5vw,3.7rem);max-width:760px;margin-bottom:18px}
+    .lead{color:var(--muted);max-width:680px;font-size:1.03rem}
+    .center{text-align:center}.center .section-title,.center .lead{margin-inline:auto}
+    .navbar{position:fixed;z-index:1000;inset:0 0 auto;height:76px;background:var(--nav);backdrop-filter:blur(18px);border-bottom:1px solid var(--line)}
+    .nav-inner{height:100%;display:flex;align-items:center;justify-content:space-between;gap:14px}
+    .nav-side{display:flex;align-items:center;gap:10px}
+    .brand{position:absolute;left:50%;transform:translateX(-50%);font-weight:850;letter-spacing:-.7px;white-space:nowrap}
+    .brand span{color:var(--accent)}
+    .icon-btn,.language-btn{height:42px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:999px;transition:.2s}
+    .icon-btn{width:42px;display:grid;place-items:center;font-size:1.05rem}
+    .language-btn{padding:0 14px;font-size:.78rem;font-weight:750}
+    .icon-btn:hover,.language-btn:hover{background:var(--accent-soft);transform:translateY(-2px)}
+    .menu-panel{position:absolute;top:84px;left:5%;width:min(320px,90%);padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);opacity:0;visibility:hidden;transform:translateY(-8px);transition:.22s}
+    .menu-panel.open{opacity:1;visibility:visible;transform:translateY(0)}
+    .menu-panel a{display:block;padding:12px 14px;border-radius:11px;color:var(--muted)}
+    .menu-panel a:hover{background:var(--accent-soft);color:var(--text)}
+    .hero{min-height:100svh;display:grid;place-items:center;text-align:center;position:relative;isolation:isolate;overflow:hidden;padding:130px 20px 90px}
+    .hero:before,.hero:after{content:"";position:absolute;width:420px;aspect-ratio:1;border-radius:50%;filter:blur(95px);opacity:.14;z-index:-1;animation:float 11s ease-in-out infinite alternate}
+    .hero:before{background:#6f8cff;top:4%;left:-17%}.hero:after{background:#a77cff;right:-14%;bottom:-18%;animation-delay:-4s}
+    .hero-content{max-width:850px;animation:rise .9s both}
+    .monogram{width:76px;height:76px;margin:0 auto 25px;border-radius:24px;display:grid;place-items:center;background:linear-gradient(135deg,#1d2028,#536ee8);color:#fff;font-size:1.8rem;font-weight:850;box-shadow:0 16px 38px #536ee833}
+    .hero h1{font-size:clamp(3rem,8vw,6rem);letter-spacing:-.075em;font-weight:850}.hero h1 span{color:var(--accent)}
+    .hero-sub{margin-top:13px;color:var(--muted);font-size:.8rem;letter-spacing:3px;text-transform:uppercase}
+    .product-name{font-size:1.2rem;font-weight:700;margin-top:25px}
+    .hero-copy{max-width:620px;margin:12px auto 0;color:var(--muted)}
+    .actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:34px}
+    .pill{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 25px;border-radius:999px;border:1px solid var(--text);background:var(--text);color:var(--bg);font-size:.88rem;font-weight:700;transition:transform .22s,box-shadow .22s,background .22s}
+    .pill:hover{transform:translateY(-3px);box-shadow:0 12px 26px #536ee82b}
+    .pill.secondary{background:transparent;border-color:var(--line);color:var(--text)}
+    .scroll-cue{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);font-size:.7rem;letter-spacing:2px;color:var(--muted);animation:bob 2s infinite}
+    .about-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:28px;margin-top:42px;align-items:stretch}
+    .panel,.stat,.history-card,.version-display{background:var(--surface);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}
+    .panel{padding:34px}.panel h3{font-size:1.45rem;margin-bottom:12px}.panel p{color:var(--muted)}
+    .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    .stat{padding:22px}.stat strong{display:block;font-size:2rem;letter-spacing:-.06em}.stat span{font-size:.8rem;color:var(--muted)}
+    .history-section{background:var(--surface);border-block:1px solid var(--line)}
+    .year-selector{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:48px 0 30px}
+    .year-btn{min-width:92px;padding:14px 20px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--muted);font-size:1.05rem;font-weight:800;transition:.22s}
+    .year-btn:hover{border-color:var(--accent);transform:translateY(-3px)}
+    .year-btn.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+    .history-card{max-width:820px;margin:auto;padding:clamp(24px,5vw,42px);background:var(--bg);animation:fade .35s}
+    .history-card h3{font-size:2rem;margin:7px 0 12px}.history-card>p:not(.eyebrow){color:var(--muted)}
+    .event-list{display:grid;gap:11px;margin-top:25px}
+    .event{display:flex;gap:13px;padding:15px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}
+    .event-dot{width:9px;height:9px;flex:none;margin-top:8px;border-radius:50%;background:var(--accent)}
+    .history-note{font-size:.76rem;color:var(--muted);margin-top:18px}
+    .version-layout{display:grid;grid-template-columns:270px minmax(0,1fr);gap:28px;margin-top:48px;align-items:start}
+    .version-list{display:grid;gap:9px}
+    .version-btn{text-align:left;padding:16px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:var(--text);transition:.22s}
+    .version-btn:hover,.version-btn.active{border-color:var(--accent);background:var(--accent-soft);transform:translateX(3px)}
+    .version-btn strong,.version-btn span{display:block}.version-btn strong{font-size:.91rem}.version-btn span{font-size:.77rem;color:var(--muted);margin-top:3px}
+    .version-display{min-height:440px;padding:clamp(23px,4vw,36px);animation:fade .35s}
+    .version-no{font-size:.75rem;font-weight:850;letter-spacing:2px;color:var(--accent)}
+    .version-display h3{font-size:2rem;margin:8px 0 12px}.version-display>p{color:var(--muted)}
+    .tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.tag{padding:6px 12px;border-radius:99px;background:var(--accent-soft);font-size:.76rem}
+    .demo{margin-top:28px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--bg)}
+    .demo-head{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid var(--line);font-size:.75rem;color:var(--muted)}
+    .demo-dots{display:flex;gap:6px}.demo-dot{width:8px;height:8px;border-radius:50%;background:#b8bbc2}
+    .demo-body{min-height:125px;max-height:260px;overflow:auto;padding:18px}
+    .bubble{display:table;max-width:90%;padding:10px 13px;margin:5px 0;border:1px solid var(--line);border-radius:13px;background:var(--surface);font-size:.85rem;overflow-wrap:anywhere}
+    .bubble.user{margin-left:auto;background:var(--accent-soft)}
+    .demo-form{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+    .demo-input{flex:1;min-width:0;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--text);padding:11px 15px;outline:none}
+    .demo-send{border:0;border-radius:99px;padding:0 18px;background:var(--text);color:var(--bg);font-weight:750}
+    .demo-caption{font-size:.73rem!important;margin-top:11px}
+    .demo-action{margin-top:12px}
+    .footer{padding:48px 0;border-top:1px solid var(--line)}
+    .footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+    .footer-brand{font-weight:850;font-size:1.15rem}.footer p,.footer-links{font-size:.8rem;color:var(--muted)}
+    .footer-links{display:flex;gap:18px;flex-wrap:wrap}
+    .reveal{opacity:0;transform:translateY(24px);transition:opacity .75s,transform .75s}.reveal.visible{opacity:1;transform:none}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+    @keyframes float{to{transform:translate(38px,-28px) scale(1.12)}}
+    @keyframes bob{50%{transform:translate(-50%,8px)}}
+    @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    @media(max-width:760px){.section{padding:82px 0}.about-grid{grid-template-columns:1fr}.version-layout{grid-template-columns:1fr}.version-list{display:flex;overflow-x:auto;padding:2px 2px 12px}.version-btn{min-width:175px}.year-selector{gap:7px}.year-btn{min-width:60px;padding:11px 12px;font-size:.94rem}.brand{font-size:.9rem}.language-btn{padding:0 10px}.hero h1{letter-spacing:-.06em}.footer-inner{align-items:flex-start;flex-direction:column}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
+  </style>
+</head>
+<body>
+  <header class="navbar">
+    <div class="container nav-inner">
+      <div class="nav-side">
+        <button class="icon-btn" id="menuToggle" aria-label="Menüyü aç" aria-expanded="false" aria-controls="menuPanel">☰</button>
+      </div>
+      <a class="brand" href="#home" aria-label="LuminaStudios ana sayfa">Lumina<span>Studios</span></a>
+      <div class="nav-side">
+        <button class="language-btn" id="languageToggle" aria-label="Dili değiştir">TR / EN</button>
+        <button class="icon-btn" id="themeToggle" aria-label="Gece temasına geç">☼</button>
+      </div>
+    </div>
+    <nav class="menu-panel" id="menuPanel" aria-label="Ana menü">
+      <a href="#home" data-tr="Ana Sayfa" data-en="Home">Ana Sayfa</a>
+      <a href="#about" data-tr="Hakkımızda" data-en="About Us">Hakkımızda</a>
+      <a href="#history" data-tr="Tarihçemiz" data-en="Our History">Tarihçemiz</a>
+      <a href="#versions" data-tr="Lumina AI Sürümleri" data-en="Lumina AI Versions">Lumina AI Sürümleri</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" id="home">
+      <div class="hero-content">
+        <div class="monogram" aria-hidden="true">LS</div>
+        <h1>Lumina<span>Studios</span></h1>
+        <p class="hero-sub">Software Company</p>
+        <p class="product-name">Lumina AI</p>
+        <p class="hero-copy" data-tr="Bir fikrin teknolojiye, teknolojinin bir deneyime dönüştüğü yolculuk." data-en="A journey where an idea becomes technology and technology becomes an experience.">Bir fikrin teknolojiye, teknolojinin bir deneyime dönüştüğü yolculuk.</p>
+        <div class="actions">
+          <a class="pill" href="#about" data-tr="Daha fazla bilgi alın" data-en="Discover More">Daha fazla bilgi alın</a>
+          <!-- Yayın adresini doğrulamadan değiştirmeyin. -->
+          <a class="pill secondary" href="https://lumina-ai-g9bc.onrender.com/app/" data-tr="Siteyi ziyaret edin" data-en="Visit Website">Siteyi ziyaret edin</a>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#about" data-tr="KEŞFET ↓" data-en="EXPLORE ↓">KEŞFET ↓</a>
+    </section>
+
+    <section class="section" id="about">
+      <div class="container">
+        <div class="reveal">
+          <p class="eyebrow" data-tr="Hakkımızda" data-en="About Us">Hakkımızda</p>
+          <h2 class="section-title" data-tr="Teknolojiye bir fikirle başladık." data-en="Technology started with an idea.">Teknolojiye bir fikirle başladık.</h2>
+          <p class="lead" data-tr="LuminaStudios, yazılım ve teknoloji alanında yenilikçi dijital ürünler geliştirmeyi hedefleyen bir yazılım markasıdır." data-en="LuminaStudios is a software brand focused on developing innovative digital products.">LuminaStudios, yazılım ve teknoloji alanında yenilikçi dijital ürünler geliştirmeyi hedefleyen bir yazılım markasıdır.</p>
+        </div>
+        <div class="about-grid reveal">
+          <article class="panel">
+            <h3>LuminaStudios Software Company</h3>
+            <p data-tr="Amacımız yalnızca yazılım üretmek değil; insanların günlük hayatında kullanabileceği, erişilebilir ve gelişime açık dijital deneyimler oluşturmaktır. Lumina AI bu yolculuğun önemli bir parçasıdır." data-en="Our goal is to build accessible digital experiences that people can use in everyday life. Lumina AI is an important part of this journey.">Amacımız yalnızca yazılım üretmek değil; insanların günlük hayatında kullanabileceği, erişilebilir ve gelişime açık dijital deneyimler oluşturmaktır. Lumina AI bu yolculuğun önemli bir parçasıdır.</p>
+          </article>
+          <div class="stats">
+            <div class="stat"><strong>2023</strong><span data-tr="Tarihçe başlangıcı" data-en="History begins">Tarihçe başlangıcı</span></div>
+            <div class="stat"><strong>2027</strong><span data-tr="Gelecek vizyonu" data-en="Future vision">Gelecek vizyonu</span></div>
+            <div class="stat"><strong>01</strong><span data-tr="Öne çıkan ürün: Lumina AI" data-en="Featured product: Lumina AI">Öne çıkan ürün: Lumina AI</span></div>
+            <div class="stat"><strong>∞</strong><span data-tr="Sürekli gelişim" data-en="Continuous improvement">Sürekli gelişim</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section history-section" id="history">
+      <div class="container">
+        <div class="center reveal">
+          <p class="eyebrow" data-tr="Zamanın İçinde Bir Yolculuk" data-en="A Journey Through Time">Zamanın İçinde Bir Yolculuk</p>
+          <h2 class="section-title" data-tr="Her yıl yeni bir başlangıç." data-en="Every year, a new beginning.">Her yıl yeni bir başlangıç.</h2>
+          <p class="lead" data-tr="LuminaStudios'un gelişimini yıllara göre keşfedin." data-en="Explore the evolution of LuminaStudios year by year.">LuminaStudios'un gelişimini yıllara göre keşfedin.</p>
+        </div>
+        <div class="year-selector reveal" id="yearSelector" aria-label="Tarihçe yılı seçimi">
+          <button class="year-btn" data-year="2023" aria-pressed="false">2023</button>
+          <button class="year-btn" data-year="2024" aria-pressed="false">2024</button>
+          <button class="year-btn" data-year="2025" aria-pressed="false">2025</button>
+          <button class="year-btn active" data-year="2026" aria-pressed="true">2026</button>
+          <button class="year-btn" data-year="2027" aria-pressed="false">2027</button>
+        </div>
+        <article class="history-card" id="historyContent" aria-live="polite" aria-atomic="true"></article>
+      </div>
+    </section>
+
+    <section class="section" id="versions">
+      <div class="container">
+        <div class="reveal">
+          <p class="eyebrow" data-tr="Ürün Gelişim Yolculuğu" data-en="Product Evolution">Ürün Gelişim Yolculuğu</p>
+          <h2 class="section-title" data-tr="Lumina AI'nin beş aşaması." data-en="Five stages of Lumina AI.">Lumina AI'nin beş aşaması.</h2>
+          <p class="lead" data-tr="İlk prototipten daha kapsamlı bir yapay zekâ deneyimine uzanan gelişim sürecini keşfedin." data-en="Explore the evolution from the first prototype to a broader AI experience.">İlk prototipten daha kapsamlı bir yapay zekâ deneyimine uzanan gelişim sürecini keşfedin.</p>
+        </div>
+        <div class="version-layout reveal">
+          <div class="version-list" id="versionList" aria-label="Lumina AI sürümleri">
+            <button class="version-btn active" data-version="0" aria-pressed="true"><strong>01 · İlk prototip</strong><span>Temel sohbet deneyimi</span></button>
+            <button class="version-btn" data-version="1" aria-pressed="false"><strong>02 · İlk arayüz</strong><span>İlk kullanıcı deneyimi</span></button>
+            <button class="version-btn" data-version="2" aria-pressed="false"><strong>03 · Stabilizasyon</strong><span>Tasarım ve optimizasyon</span></button>
+            <button class="version-btn" data-version="3" aria-pressed="false"><strong>04 · Görsel üretimi</strong><span>Yeni üretim yetenekleri</span></button>
+            <button class="version-btn" data-version="4" aria-pressed="false"><strong>05 · Genişleyen Lumina</strong><span>Ses ve konum özellikleri</span></button>
+          </div>
+          <article class="version-display" id="versionDisplay" aria-live="polite" aria-atomic="true"></article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div><div class="footer-brand">LuminaStudios</div><p>Software Company</p></div>
+      <nav class="footer-links" aria-label="Alt menü">
+        <a href="#about" data-tr="Hakkımızda" data-en="About Us">Hakkımızda</a>
+        <a href="#history" data-tr="Tarihçe" data-en="History">Tarihçe</a>
+        <a href="#versions">Lumina AI</a>
+        <!-- Gerçek iletişim adresi sağlandığında buraya e-posta veya sosyal bağlantılar ekleyin. -->
+      </nav>
+      <p>© <span id="currentYear">2026</span> LuminaStudios. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    "use strict";
+
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+    const state = {
+      theme: localStorage.getItem("lumina-theme") || "light",
+      language: localStorage.getItem("lumina-language") || "tr",
+      year: 2026,
+      version: 0
+    };
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
+      })[char]);
+    }
+
+    // Tema: tercihi saklar, sistem tercihini ilk ziyarette kullanır.
+    function applyTheme(theme) {
+      state.theme = theme;
+      document.documentElement.dataset.theme = theme;
+      $("#themeToggle").textContent = theme === "dark" ? "☾" : "☼";
+      $("#themeToggle").setAttribute("aria-label",
+        theme === "dark" ? "Gündüz temasına geç" : "Gece temasına geç");
+      $('meta[name="theme-color"]').content = theme === "dark" ? "#101114" : "#f7f7f5";
+      localStorage.setItem("lumina-theme", theme);
+    }
+    if (!localStorage.getItem("lumina-theme") && matchMedia("(prefers-color-scheme: dark)").matches) state.theme = "dark";
+    applyTheme(state.theme);
+    $("#themeToggle").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
+
+    // Hamburger menü.
+    const menu = $("#menuPanel"), menuToggle = $("#menuToggle");
+    function closeMenu() { menu.classList.remove("open"); menuToggle.setAttribute("aria-expanded", "false"); }
+    menuToggle.addEventListener("click", () => {
+      const open = menu.classList.toggle("open");
+      menuToggle.setAttribute("aria-expanded", String(open));
+    });
+    $$("a", menu).forEach(link => link.addEventListener("click", closeMenu));
+    document.addEventListener("click", event => {
+      if (!menu.contains(event.target) && !menuToggle.contains(event.target)) closeMenu();
+    });
+    document.addEventListener("keydown", event => { if (event.key === "Escape") closeMenu(); });
+
+    // İçerik verileri: geçmişe ait doğrulanmamış tarihler özellikle işaretlenmiştir.
+const history = {
+  2023: {
+    tr: {
+      title: "İlk fikir",
+      desc: "Lumina AI, ilk kez Alesta AI adıyla piyasaya sunuldu.",
+      events: ["Lumina AI, eski adı olan Alesta AI ile ilk kez piyasaya sürüldü."]
+    },
+    en: {
+      title: "The Beginning",
+      desc: "Lumina AI was first introduced to the market under the name Alesta AI.",
+      events: ["Lumina AI made its debut under its original name, Alesta AI."]
+    }
+  },
+  2024: {
+    tr: {
+      title: "Araştırma ve hazırlık",
+      desc: "2024 yılında Lumina AI, Gemini API ile çalışmaya başladı.",
+      events: ["Gemini API entegrasyonu gerçekleştirildi ve proje yapay zekâ altyapısıyla geliştirilmeye başlandı."]
+    },
+    en: {
+      title: "Research and Preparation",
+      desc: "In 2024, Lumina AI began working with the Gemini API.",
+      events: ["The Gemini API was integrated, marking the beginning of development with an AI-powered infrastructure."]
+    }
+  },
+  2025: {
+    tr: {
+      title: "Projenin şekillenmesi",
+      desc: "Şirketin Bigcodes isminden LuminaStudios olarak yeniden yapılandırılmasıyla birlikte Alesta AI, Lumina AI adını aldı.",
+      events: ["Bigcodes ismi LuminaStudios olarak değiştirildi. Bu değişimle birlikte Alesta AI, Lumina AI adını aldı."]
+    },
+    en: {
+      title: "A New Identity",
+      desc: "Following the company's rebranding from Bigcodes to LuminaStudios, Alesta AI was renamed Lumina AI.",
+      events: ["Bigcodes was rebranded as LuminaStudios. As part of this transition, Alesta AI adopted the name Lumina AI."]
+    }
+  },
+  2026: {
+    tr: {
+      title: "Gelişim ve dönüşüm",
+      desc: "Lumina AI'nin ürün geliştirme, yeni özellikler ekleme ve test süreçleri hız kazandı.",
+      events: [
+        "Sesli konuşma, görsel oluşturma, konum ve hava durumu hizmetleri eklendi.",
+        "Kullanıcı deneyimini geliştirmek amacıyla yeni arayüz tasarımları hayata geçirildi.",
+        "Farklı alanlarda uzmanlaşmış yapay zekâ ajanları sisteme entegre edilerek kodlama ve yazılım geliştirme yetenekleri iyileştirildi."
+      ]
+    },
+    en: {
+      title: "Growth and Transformation",
+      desc: "Lumina AI accelerated its product development, feature expansion, and testing efforts.",
+      events: [
+        "Voice conversations, image generation, location services, and weather features were introduced.",
+        "New interface designs were implemented to improve the overall user experience.",
+        "Specialized AI agents were integrated into the system, enhancing its coding and software development capabilities."
+      ]
+    }
+  },
+  2027: {
+    tr: {
+      title: "Gelecek vizyonu",
+      desc: "2027 henüz tamamlanmadı. Bu bölüm, gerçekleşmiş olaylardan ziyade Lumina AI için planlanan hedefleri ve gelecek vizyonunu yansıtmaktadır.",
+      events: [
+        "Teknolojinin hızla gelişmesiyle birlikte Lumina AI'nin de sürekli geliştirilmesi hedefleniyor.",
+        "Lumina AI'nin gelecekte farklı projelere entegre edilmesi planlanıyor.",
+        "Kullanıcılara sunulan hizmetlerin genişletilmesi ve yeni teknolojilerin sisteme kazandırılması hedefleniyor."
+      ]
+    },
+    en: {
+      title: "Looking Ahead",
+      desc: "As 2027 has not yet been completed, this section outlines Lumina AI's future vision and planned objectives rather than completed milestones.",
+      events: [
+        "Lumina AI aims to evolve continuously alongside rapid technological advancements.",
+        "Future integration of Lumina AI into a wider range of projects is planned.",
+        "The goal is to expand available services and introduce new technologies to the platform."
+      ]
+    }
+  }
+};
+
+    
+function renderHistory(year) {
+  state.year = year;
+  const data = history[year][state.language];
+
+  $$(".year-btn").forEach(button => {
+    const active = Number(button.dataset.year) === year;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  const label = state.language === "tr"
+    ? (year === 2027 ? "GELECEK HEDEFLERİ" : "TARİHÇE")
+    : (year === 2027 ? "FUTURE GOALS" : "HISTORY");
+
+  $("#historyContent").innerHTML = `
+    <p class="eyebrow">${year} · ${label}</p>
+    <h3>${escapeHTML(data.title)}</h3>
+    <p>${escapeHTML(data.desc)}</p>
+    <div class="event-list">
+      ${data.events.map(item => `
+        <div class="event">
+          <span class="event-dot" aria-hidden="true"></span>
+          <div>${escapeHTML(item)}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+$$(".year-btn").forEach(button => {
+  button.addEventListener("click", () => {
+    renderHistory(Number(button.dataset.year));
+  });
+});
+
+    const versions = [
+      { title:"İlk prototip", desc:"Lumina AI'nin temel sohbet fikrini temsil eden erken dönem simülasyonu.", tags:["Temel sohbet","İlk prototip"], welcome:"Merhaba! Bu, Lumina AI'nin ilk prototipini temsil eden tarihsel bir simülasyondur." },
+      { title:"İlk arayüz", desc:"Görsel üretim desteği bulunmayan, tasarım ve kullanılabilirlik sorunlarının yaşandığı erken arayüz aşaması.", tags:["Temel arayüz","Sohbet sistemi"], welcome:"Bu ekran, erken dönem arayüzünü temsil eden bir simülasyondur." },
+      { title:"Stabilizasyon ve optimizasyon", desc:"Arayüz iyileştirmeleri, hata düzeltmeleri ve performans çalışmalarını temsil eden aşama.", tags:["Arayüz yenileme","Hata düzeltme","Optimizasyon"], welcome:"Lumina AI'nin yenilenen arayüz dönemini temsil eden demoya hoş geldiniz." },
+      { title:"Görsel üretimi", desc:"Görsel üretim özelliklerinin sisteme dahil edildiği gelişim aşaması.", tags:["Görsel desteği","Üretim araçları"], welcome:"Bu aşama, görsel üretim özelliğinin tarihsel simülasyonudur." },
+      { title:"Genişleyen Lumina AI", desc:"Ses özellikleri, konum hizmetleri ve daha geniş kullanım alanlarını temsil eden aşama.", tags:["Sesli yanıt","Konum hizmetleri","Hava durumu"], welcome:"Lumina AI'nin genişleyen özelliklerini temsil eden tarihsel demoya hoş geldiniz." }
+    ];
+
+    function renderVersion(index) {
+      state.version = index;
+      const version = versions[index], tr = state.language === "tr";
+      $$(".version-btn").forEach(button => {
+        const active = Number(button.dataset.version) === index;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      $("#versionDisplay").innerHTML = `
+        <span class="version-no">VERSION ${String(index + 1).padStart(2,"0")}</span>
+        <h3>${escapeHTML(version.title)}</h3>
+        <p>${escapeHTML(version.desc)}</p>
+        <div class="tags">${version.tags.map(tag => `<span class="tag">${escapeHTML(tag)}</span>`).join("")}</div>
+        <div class="demo">
+          <div class="demo-head"><span>Lumina AI · Historical demo</span><span class="demo-dots" aria-hidden="true"><i class="demo-dot"></i><i class="demo-dot"></i><i class="demo-dot"></i></span></div>
+          <div class="demo-body" id="demoBody"><div class="bubble">${escapeHTML(version.welcome)}</div>
+            ${index === 3 ? `<div class="bubble">${tr ? "Görsel üretimi bu tarihsel demoda yalnızca temsil edilmektedir." : "Image generation is represented only in this historical demo."}</div>` : ""}
+            ${index === 4 ? `<button class="pill demo-action" id="voiceDemo" type="button">${tr ? "Sesli yanıtı dene" : "Try voice response"}</button>` : ""}
+          </div>
+          <form class="demo-form" id="demoForm">
+            <label class="sr-only" for="demoInput">${tr ? "Demo mesajı" : "Demo message"}</label>
+            <input class="demo-input" id="demoInput" maxlength="300" autocomplete="off" placeholder="${tr ? "Bir mesaj yazın..." : "Write a message..."}">
+            <button class="demo-send" type="submit">${tr ? "Gönder" : "Send"}</button>
+          </form>
+        </div>
+        <p class="demo-caption">${tr ? "Bu alan tarihsel amaçlı bir simülasyondur; gerçek Lumina AI servisine veya konum bilgilerine bağlı değildir." : "This is a historical simulation; it is not connected to the live Lumina AI service or location data."}</p>`;
+      $("#demoForm").addEventListener("submit", handleDemoMessage);
+      const voiceButton = $("#voiceDemo");
+      if (voiceButton) voiceButton.addEventListener("click", playDemoVoice);
+    }
+
+    function handleDemoMessage(event) {
+      event.preventDefault();
+      const input = $("#demoInput"), message = input.value.trim();
+      if (!message) return;
+      const body = $("#demoBody");
+      const user = document.createElement("div");
+      user.className = "bubble user";
+      user.textContent = message;
+      body.append(user);
+      const reply = document.createElement("div");
+      reply.className = "bubble";
+      reply.textContent = state.language === "tr"
+        ? "Bu tarihçe demosudur; gerçek yapay zekâ yanıtı üretmez."
+        : "This is a history demo; it does not generate a real AI response.";
+      body.append(reply);
+      input.value = "";
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function playDemoVoice() {
+      if (!("speechSynthesis" in window)) {
+        alert(state.language === "tr" ? "Tarayıcınız sesli yanıt özelliğini desteklemiyor." : "Your browser does not support speech synthesis.");
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(state.language === "tr" ? "Merhaba, ben Lumina AI." : "Hello, I am Lumina AI.");
+      utterance.lang = state.language === "tr" ? "tr-TR" : "en-US";
+      window.speechSynthesis.speak(utterance);
+    }
+    $$(".version-btn").forEach(button => button.addEventListener("click", () => renderVersion(Number(button.dataset.version))));
+
+    // Basit TR/EN içerik değişimi.
+    function applyLanguage(language) {
+      state.language = language;
+      document.documentElement.lang = language;
+      $("#languageToggle").textContent = language === "tr" ? "TR / EN" : "EN / TR";
+      $$("[data-tr][data-en]").forEach(element => {
+        element.textContent = element.dataset[language];
+      });
+      localStorage.setItem("lumina-language", language);
+      renderHistory(state.year);
+      renderVersion(state.version);
+    }
+    $("#languageToggle").addEventListener("click", () => applyLanguage(state.language === "tr" ? "en" : "tr"));
+
+    // Kaydırma animasyonları; reduced-motion tercihine saygı duyar.
+    const revealItems = $$(".reveal");
+    if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: .12 });
+      revealItems.forEach(item => observer.observe(item));
+    } else {
+      revealItems.forEach(item => item.classList.add("visible"));
+    }
+
+    $("#currentYear").textContent = new Date().getFullYear();
+    renderHistory(state.year);
+    renderVersion(state.version);
+    applyLanguage(state.language);
+  </script>
+</body>
+</html>
